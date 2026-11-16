@@ -7,7 +7,7 @@ export type Hotspot = {
   h: number;
   title: string;
   description: string;
-  tip?: string;
+  tip?: string | undefined;
 };
 
 export type Lesson = {
@@ -16,9 +16,9 @@ export type Lesson = {
   title: string;
   summary: string;
   /** Path the user follows inside the emissor, e.g. "Cadastros > Produtos". */
-  path?: string;
-  image?: string;
-  video?: string;
+  path?: string | undefined;
+  image?: string | undefined;
+  video?: string | undefined;
   content: string;
   hotspots: Hotspot[];
 };
