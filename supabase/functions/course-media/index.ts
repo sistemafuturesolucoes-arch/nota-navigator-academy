@@ -137,7 +137,7 @@ Coordenadas x, y, w, h devem ser percentuais de 0 a 100, aproximando retângulos
   });
 
   const raw = result.text.trim();
-  const jsonText = raw.match(/\\{[\\s\\S]*\\}/)?.[0];
+  const jsonText = raw.match(/\{[\s\S]*\}/)?.[0];
   if (!jsonText) throw new Error("A IA não conseguiu montar a aula em formato válido. Tente outro print.");
   const parsed = JSON.parse(jsonText) as Record<string, unknown>;
   const clean = (value: unknown, max = 12000) => typeof value === "string" ? value.trim().slice(0, max) : "";
