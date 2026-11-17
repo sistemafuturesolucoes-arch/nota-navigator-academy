@@ -26,7 +26,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { fileToCompressedBlob } from "@/lib/course/image";
-import { newId, resetCourse, saveCourse, useCourse } from "@/lib/course/store";
+import { loadCourseFromSupabase, newId, resetCourse, saveCourseToSupabase, useCourse } from "@/lib/course/store";
 import type { Course, Hotspot, Lesson, Module } from "@/lib/course/types";
 import { cn } from "@/lib/utils";
 
@@ -76,17 +76,6 @@ async function uploadCourseImage(file: File, lessonId: string, accessToken: stri
   return `https://itbppoailkqkuxajesgys.supabase.co/storage/v1/object/public/${COURSE_IMAGES_BUCKET}/${path}`;
 }
 
-async function removeCourseImage(publicUrl: string | undefined, accessToken: string) {
-  if (!publicUrl) return;
-  const prefix = `https://itbppoailkqkuxajesgys.supabase.co/storage/v1/object/public/${COURSE_IMAGES_BUCKET}/`;
-  if (!publicUrl.startsWith(prefix)) return;
-  const path = publicUrl.slice(prefix.length);
-  if (!path || path.includes("..")) return;
-  await fetch(`https://itbppoailkuxajesgys.supabase.co/storage/v1/object/${COURSE_IMAGES_BUCKET}/${path.split("/").map(encodeURIComponent).join("/")}`, {
-    method: "DELETE",
-    headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${accessToken}` },
-  });
-}
 
 
 type AdminSession = {
@@ -275,6 +264,14 @@ function AdminWorkspace({ accessToken }: { accessToken: string }) {
   const importRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    let active = true;
+    void loadCourseFromSupabase(accessToken)
+      .then((course) => { if (active) setDraft(course); })
+      .catch((error) => toast.error(error instanceof Error ? error.message : "Não foi possível carregar as aulas do banco."));
+    return () => { active = false; };
+  }, [accessToken]);
+
+  useEffect(() => {
     if (!dirty) setDraft(stored);
   }, [stored, dirty]);
 
@@ -283,13 +280,13 @@ function AdminWorkspace({ accessToken }: { accessToken: string }) {
     setDirty(true);
   };
 
-  const save = () => {
+  const save = async () => {
     try {
-      saveCourse(draft);
+      await saveCourseToSupabase(draft, accessToken);
       setDirty(false);
-      toast.success("Alterações salvas");
+      toast.success("Aulas, módulos e mídias salvos no banco de dados.");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Não foi possível salvar.");
+      toast.error(e instanceof Error ? e.message : "Não foi possível salvar no banco.");
     }
   };
 
@@ -570,9 +567,6 @@ function LessonEditor({
       const previousImage = l.image;
       const image = await uploadCourseImage(file, l.id, accessToken);
       patch({ image });
-      if (previousImage && previousImage !== image) {
-        void removeCourseImage(previousImage, accessToken);
-      }
       toast.success("Print compactado e enviado ao armazenamento do manual.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não consegui enviar esta imagem.");
