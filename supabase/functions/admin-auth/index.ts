@@ -133,6 +133,20 @@ Deno.serve(async (request: Request) => {
       });
     }
 
+    if (action === "logout") {
+      const token = (request.headers.get("authorization") ?? "").replace(/^Bearer\\s+/i, "");
+      if (token) {
+        await fetch(`${env("SUPABASE_URL")}/auth/v1/logout?scope=global`, {
+          method: "POST",
+          headers: {
+            apikey: env("SUPABASE_ANON_KEY"),
+            Authorization: `Bearer ${token}`,
+          },
+        });
+      }
+      return reply(200, { ok: true });
+    }
+
     if (action === "session" || action === "change-password") {
       const token = (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
       if (!token) return reply(401, { error: "Sessão não informada." });
