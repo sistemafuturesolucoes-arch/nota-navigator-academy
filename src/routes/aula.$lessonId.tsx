@@ -276,7 +276,7 @@ function LessonPage() {
           </TabsContent>
           {lesson.video && (
             <TabsContent value="video">
-              <VideoEmbed url={lesson.video} title={lesson.title} />
+              <VideoEmbed url={lesson.video} title={lesson.title} lessonId={lesson.id} />
             </TabsContent>
           )}
         </Tabs>
