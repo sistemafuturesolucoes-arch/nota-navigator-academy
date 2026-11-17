@@ -489,8 +489,7 @@ function AdminWorkspace({ accessToken }: { accessToken: string }) {
       {showErrorKnowledge ? <ErrorKnowledgeManager accessToken={accessToken} /> : <>
       <p className="mb-6 flex items-start gap-2 rounded-xl border border-primary/30 bg-secondary px-4 py-3 text-sm text-secondary-foreground">
         <Info className="mt-0.5 size-4 shrink-0" />
-        Por enquanto o conteúdo fica salvo neste navegador. Quando o banco de dados for conectado, ele passa a valer para
-        todos os clientes. Use Exportar para guardar uma cópia.
+        O conteúdo é carregado e salvo no Supabase. Depois de salvar, as aulas e os módulos publicados ficam disponíveis para os visitantes. Use Exportar para guardar uma cópia.
       </p>
 
       <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
