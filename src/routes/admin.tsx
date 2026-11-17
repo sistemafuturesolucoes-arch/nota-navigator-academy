@@ -11,6 +11,7 @@ import {
   RotateCcw,
   Save,
   ShieldCheck,
+  Sparkles,
   LogOut,
   Trash2,
   Upload,
@@ -133,6 +134,20 @@ async function uploadCourseImage(file: File, lessonId: string, accessToken: stri
 }
 
 
+
+async function blobToBase64(blob: Blob): Promise<string> {
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const value = String(reader.result ?? "");
+      const base64 = value.split(",")[1];
+      if (!base64) reject(new Error("Não foi possível preparar o print para a IA."));
+      else resolve(base64);
+    };
+    reader.onerror = () => reject(new Error("Não foi possível ler o print."));
+    reader.readAsDataURL(blob);
+  });
+}
 
 type AdminSession = {
   access_token: string;
@@ -648,6 +663,7 @@ function LessonEditor({
   accessToken: string;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLInputElement>(null);
   const mod = course.modules.find((m) => m.lessonIds.includes(l.id));
@@ -657,12 +673,57 @@ function LessonEditor({
   const patchHotspot = (id: string, p: Partial<Hotspot>) =>
     patch({ hotspots: l.hotspots.map((h) => (h.id === id ? { ...h, ...p } : h)) });
 
+  const generateFromPrint = async (file: File) => {
+    setGenerating(true);
+    try {
+      if (!accessToken) throw new Error("Entre novamente no painel para usar a IA.");
+      const compressed = await fileToCompressedBlob(file);
+      const imageBase64 = await blobToBase64(compressed);
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/course-media`, {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_PUBLISHABLE_KEY,
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ action: "generate-lesson", imageBase64, mimeType: "image/jpeg" }),
+      });
+      const data = await response.json() as {
+        error?: string; moduleTitle?: string; moduleDescription?: string; title?: string;
+        summary?: string; path?: string; content?: string; hotspots?: Hotspot[];
+      };
+      if (!response.ok) throw new Error(data.error || "A IA não conseguiu gerar a aula.");
+      patch({
+        ...(data.title ? { title: data.title } : {}),
+        ...(data.summary ? { summary: data.summary } : {}),
+        ...(data.path ? { path: data.path } : {}),
+        ...(data.content ? { content: data.content } : {}),
+        ...(Array.isArray(data.hotspots) ? { hotspots: data.hotspots } : {}),
+      });
+      if (mod && data.moduleTitle && (mod.title === "Novo módulo" || !mod.description.trim())) {
+        update((courseDraft) => ({
+          ...courseDraft,
+          modules: courseDraft.modules.map((item) => item.id === mod.id
+            ? { ...item, title: mod.title === "Novo módulo" ? data.moduleTitle! : item.title,
+                description: item.description || data.moduleDescription || item.description }
+            : item),
+        }));
+      }
+      toast.success("Aula criada pela IA. Revise os textos e os pontos marcados antes de salvar.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não consegui gerar a aula.");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   const uploadPrint = async (file: File) => {
     try {
       if (!accessToken) throw new Error("Entre novamente no painel para enviar imagens.");
       const image = await uploadCourseImage(file, l.id, accessToken);
       patch({ image });
-      toast.success("Print compactado e enviado ao armazenamento do manual.");
+      toast.success("Print enviado. Agora vou preparar a aula para você...");
+      await generateFromPrint(file);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não consegui enviar esta imagem.");
     }
@@ -767,8 +828,9 @@ function LessonEditor({
               e.target.value = "";
             }}
           />
-          <Button variant="outline" onClick={() => fileRef.current?.click()}>
-            <ImageUp /> {l.image ? "Trocar print" : "Subir print"}
+          <Button variant="outline" onClick={() => fileRef.current?.click()} disabled={generating}>
+            {generating ? <Sparkles className="animate-pulse" /> : <ImageUp />}
+            {generating ? "Gerando aula..." : l.image ? "Trocar print e gerar aula" : "Enviar print e gerar aula"}
           </Button>
         </div>
 
