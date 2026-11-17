@@ -159,7 +159,6 @@ function AdminPage() {
   const [status, setStatus] = useState<"signed-out" | "signed-in">("signed-out");
   const [session, setSession] = useState<AdminSession | null>(null);
   const [mustChangePassword, setMustChangePassword] = useState(false);
-  const [showBootstrap, setShowBootstrap] = useState(false);
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -206,23 +205,6 @@ function AdminPage() {
     }
   };
 
-  const bootstrap = async () => {
-    setBusy(true);
-    setError("");
-    setNotice("");
-    try {
-      await adminRequest("bootstrap");
-      setNotice("Administrador criado. Entre com usuário admin e senha temporária 123456. Você deverá trocá-la no primeiro acesso.");
-      setShowBootstrap(false);
-      setUsername("admin");
-      setPassword("");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Não foi possível criar o administrador.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const changePassword = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setBusy(true);
@@ -258,20 +240,11 @@ function AdminPage() {
           </div>
           {error && <p role="alert" className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
           {notice && <p role="status" className="mb-4 rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm">{notice}</p>}
-          {showBootstrap ? (
-            <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">O primeiro acesso cria o usuário administrador uma única vez. A senha temporária será 123456 e deverá ser alterada logo após entrar.</p>
-              <Button type="button" className="w-full" disabled={busy} onClick={() => void bootstrap()}>{busy ? "Configurando..." : "Criar administrador"}</Button>
-              <Button type="button" variant="ghost" className="w-full" onClick={() => setShowBootstrap(false)}>Voltar ao login</Button>
-            </div>
-          ) : (
-            <form onSubmit={login} className="space-y-4">
-              <div><Label htmlFor="admin-username">Usuário</Label><Input id="admin-username" autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} required /></div>
-              <div><Label htmlFor="admin-password">Senha</Label><Input id="admin-password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></div>
-              <Button type="submit" className="w-full" disabled={busy}>{busy ? "Entrando..." : "Entrar no painel"}</Button>
-              <Button type="button" variant="ghost" className="w-full" onClick={() => { setShowBootstrap(true); setError(""); }}>Configurar primeiro acesso</Button>
-            </form>
-          )}
+          <form onSubmit={login} className="space-y-4">
+            <div><Label htmlFor="admin-username">Usuário</Label><Input id="admin-username" autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} required /></div>
+            <div><Label htmlFor="admin-password">Senha</Label><Input id="admin-password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></div>
+            <Button type="submit" className="w-full" disabled={busy}>{busy ? "Entrando..." : "Entrar no painel"}</Button>
+          </form>
         </section>
       </main>
     );

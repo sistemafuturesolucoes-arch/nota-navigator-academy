@@ -107,11 +107,24 @@ Deno.serve(async (request: Request) => {
         return reply(401, { error: "Usuário ou senha inválidos." });
       }
 
-      // Diferencia ausência de administrador de uma senha digitada incorretamente.
+      // Se ainda não existe administrador, cria automaticamente a conta padrão
+      // somente quando a primeira tentativa usa admin / 123456.
       const listed = await adminRequest("users?page=1&per_page=100", "GET");
+      if (!listed.response.ok) return reply(503, { error: "Não foi possível verificar a conta administrativa." });
       const users = Array.isArray(listed.data.users) ? listed.data.users as Array<{ app_metadata?: { role?: string } }> : [];
-      if (!users.some((candidate) => candidate.app_metadata?.role === "admin")) {
-        return reply(409, { error: "Primeiro acesso ainda não configurado. Clique em Configurar primeiro acesso para criar o administrador." });
+      const adminExists = users.some((candidate) => candidate.app_metadata?.role === "admin");
+      if (!adminExists) {
+        if (password !== "123456") return reply(401, { error: "Usuário ou senha inválidos." });
+        const created = await adminRequest("users", "POST", {
+          email: ADMIN_EMAIL,
+          password: "123456",
+          email_confirm: true,
+          app_metadata: { role: "admin", must_change_password: false },
+        });
+        if (!created.response.ok) {
+          console.error("automatic admin creation failed", created.response.status, created.data);
+          return reply(500, { error: "Não foi possível criar a conta administrativa. Tente novamente." });
+        }
       }
 
       const response = await fetch(`${env("SUPABASE_URL")}/auth/v1/token?grant_type=password`, {
