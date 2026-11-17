@@ -36,7 +36,7 @@ const ORIGINAL_PRINTS = [
   ["servicos-lista", "52c98da6-280e-43fc-a63f-960a09e539fb", "servicos-lista.png"],
   ["servico-cadastro", "a3869b55-0580-4e32-a415-bd92e69e9025", "servico-cadastro.png"],
   ["clientes-lista", "662f7f5d-c67d-465c-8dc8-2f7e26de1367", "clientes-lista.png"],
-  ["cliente-cadastro", "d4dbaba4-b51d-4f78-b414-6ac57c268539", "cliente-cadastro.png"],
+  ["cliente-cadastro", "d4dbaba4-b51d-4cc4-bf64-da68bb62647e", "cliente-cadastro.png"],
 ] as const;
 
 async function importOriginalPrints() {

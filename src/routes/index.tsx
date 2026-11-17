@@ -88,7 +88,7 @@ function Home() {
                   <p className="max-w-sm text-sm text-ink-muted">O arquivo da tela ainda não está incluído na publicação independente.</p>
                 </div>
               ) : (
-                <img src={dashboard.url} alt="Painel do Emissor Future" onError={() => setHeroImageUnavailable(true)} className="block w-full" />
+                <img src={course.lessons.dashboard?.image || dashboard.url} alt="Painel do Emissor Future" onError={() => setHeroImageUnavailable(true)} className="block w-full" />
               )}
               {[
                 { x: 6.4, y: 16.4, w: 22.5, h: 10.8, n: 1 },
