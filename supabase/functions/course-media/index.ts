@@ -87,80 +87,103 @@ async function importOriginalPrints() {
 }
 
 
-async function generateLessonFromImage(imageBase64: string, mimeType: string) {
+async function generateLessonFromImages(imageUrls: string[]) {
   const apiKey = env("GEMINI_API_KEY");
-  if (!["image/png", "image/jpeg", "image/webp"].includes(mimeType)) {
-    throw new Error("Formato de imagem não suportado. Envie PNG, JPG ou WEBP.");
-  }
-  if (!imageBase64 || imageBase64.length > 12 * 1024 * 1024) {
-    throw new Error("O print está vazio ou é muito grande. Envie uma imagem menor que 9 MB.");
+  if (!Array.isArray(imageUrls) || imageUrls.length < 1 || imageUrls.length > 8) {
+    throw new Error("Envie de 1 a 8 prints por aula.");
   }
 
-  const bytes = Uint8Array.from(atob(imageBase64), (character) => character.charCodeAt(0));
+  const allowedPrefix = `${env("SUPABASE_URL")}/storage/v1/object/public/course-images/lessons/`;
+  const imageParts: Array<{ type: "image"; image: Uint8Array; mimeType: string }> = [];
+  for (const imageUrl of imageUrls) {
+    if (typeof imageUrl !== "string" || !imageUrl.startsWith(allowedPrefix)) {
+      throw new Error("Um dos prints não pertence ao armazenamento autorizado do manual.");
+    }
+    const downloaded = await fetch(imageUrl);
+    if (!downloaded.ok) throw new Error("Não consegui abrir um dos prints salvos. Envie novamente a imagem.");
+    const mimeType = (downloaded.headers.get("content-type") ?? "").split(";")[0].trim();
+    if (!["image/jpeg", "image/png", "image/webp"].includes(mimeType)) {
+      throw new Error("Um dos arquivos não é uma imagem JPG, PNG ou WEBP.");
+    }
+    const bytes = new Uint8Array(await downloaded.arrayBuffer());
+    if (!bytes.length || bytes.byteLength > 8 * 1024 * 1024) {
+      throw new Error("Um dos prints está vazio ou ultrapassa 8 MB após a compactação.");
+    }
+    imageParts.push({ type: "image", image: bytes, mimeType });
+  }
+
   const google = createGoogleGenerativeAI({ apiKey });
   const model = Deno.env.get("GEMINI_MODEL") || "gemini-3.5-flash-lite";
-  const prompt = `Analise esta captura de tela do sistema Emissor Future e crie o conteúdo de uma aula de treinamento em português brasileiro.
-Escreva como um instrutor humano, claro e paciente, que ensina alguém que está usando o sistema pela primeira vez.
-Não invente informações que não estejam visíveis. Se o caminho exato do menu não puder ser inferido, deixe path como string vazia.
-Responda SOMENTE com JSON válido, sem markdown ou comentários, neste formato:
+  const prompt = `Você é um instrutor especialista no Emissor Future. Analise TODOS os prints na ordem em que aparecem.
+Crie uma aula completa em português brasileiro, natural, didática e prática. Trate as imagens como etapas sequenciais de uma única tarefa, quando fizer sentido.
+Não invente menus, botões, campos, valores ou regras fiscais. Se algo não estiver legível, sinalize no texto e não crie marcação para esse elemento.
+A aula deve explicar o objetivo, o caminho no sistema, o que fazer em cada tela, o que preencher, o que conferir e como concluir.
+Use passos numerados e títulos claros. Organize o conteúdo por print (Print 1, Print 2 etc.) para o aluno saber quando avançar.
+As marcações devem apontar para botões/campos reais visíveis em cada print. Coordenadas x, y, w, h são percentuais 0-100 da imagem correspondente. Não use áreas gigantes: marque cada controle de forma precisa. Crie no máximo 12 marcações por print.
+Responda SOMENTE JSON válido, sem markdown externo, neste formato:
 {
-  "moduleTitle": "nome curto e organizado para o módulo",
-  "moduleDescription": "descrição amigável do módulo em 1 ou 2 frases",
+  "moduleTitle": "nome sugerido para o módulo",
+  "moduleDescription": "descrição curta e humana do módulo",
   "title": "título da aula",
-  "summary": "resumo claro do que o usuário vai aprender",
-  "path": "caminho no sistema, se visível ou claramente inferível",
-  "content": "aula completa em Markdown, com introdução, objetivo, explicação da tela e passos numerados. Explique o que preencher, o que conferir e como concluir. Não invente campos ou botões.",
-  "hotspots": [
+  "summary": "o que o aluno vai aprender",
+  "path": "caminho no emissor, se puder identificar",
+  "content": "aula completa em Markdown, com introdução, objetivo e passo a passo detalhado por tela",
+  "screenshots": [
     {
-      "x": 10,
-      "y": 20,
-      "w": 15,
-      "h": 8,
-      "title": "nome visível do botão ou campo",
-      "description": "explicação simples e natural da função",
-      "tip": "dica prática ou string vazia"
+      "index": 0,
+      "caption": "o que esta tela mostra",
+      "hotspots": [
+        { "x": 10, "y": 20, "w": 15, "h": 8, "title": "nome do botão ou campo", "description": "explicação clara do que faz e quando usar", "tip": "dica curta ou vazio" }
+      ]
     }
   ]
 }
-Coordenadas x, y, w, h devem ser percentuais de 0 a 100, aproximando retângulos pequenos ao redor de elementos que estejam realmente visíveis. Inclua no máximo 12 itens importantes; não crie hotspots para elementos que não consiga identificar. A aula deve ser útil mesmo que não seja possível identificar todos os elementos.`;
+O array screenshots deve conter exatamente uma entrada para cada print recebido, preservando os índices de 0 a ${imageParts.length - 1}. Se não houver controles identificáveis em uma imagem, retorne hotspots vazio para ela.
+A explicação de cada marcação deve ser curta o suficiente para leitura na tela, mas completa para o aluno entender o que fazer.`;
   const result = await generateText({
     model: google(model),
     messages: [{
       role: "user",
       content: [
         { type: "text", text: prompt },
-        { type: "image", image: bytes, mimeType },
+        ...imageParts.map((part, index) => ({
+          type: "text" as const,
+          text: `PRINT ${index + 1} de ${imageParts.length}`,
+        })).flatMap((label, index) => [label, imageParts[index]]),
       ],
     }],
-    maxOutputTokens: 6000,
+    maxOutputTokens: 10000,
     maxRetries: 1,
   });
 
   const raw = result.text.trim();
   const jsonText = raw.match(/\{[\s\S]*\}/)?.[0];
-  if (!jsonText) throw new Error("A IA não conseguiu montar a aula em formato válido. Tente outro print.");
+  if (!jsonText) throw new Error("A IA não conseguiu montar a aula em formato válido. Tente novamente.");
   const parsed = JSON.parse(jsonText) as Record<string, unknown>;
   const clean = (value: unknown, max = 12000) => typeof value === "string" ? value.trim().slice(0, max) : "";
-  const hotspots = Array.isArray(parsed.hotspots) ? parsed.hotspots.slice(0, 12).flatMap((item, index) => {
-    if (!item || typeof item !== "object") return [];
-    const h = item as Record<string, unknown>;
-    const number = (key: string) => {
-      const value = Number(h[key]);
-      return Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0;
-    };
-    const title = clean(h.title, 120);
-    if (!title) return [];
-    const x = number("x"), y = number("y");
-    const w = Math.max(1, Math.min(number("w"), 100 - x));
-    const height = Math.max(1, Math.min(number("h"), 100 - y));
-    return [{
-      id: `ai-${index + 1}-${crypto.randomUUID().slice(0, 8)}`,
-      x, y, w, h: height,
-      title,
-      description: clean(h.description, 1000),
-      ...(clean(h.tip, 300) ? { tip: clean(h.tip, 300) } : {}),
-    }];
-  }) : [];
+  const generatedScreens = Array.isArray(parsed.screenshots) ? parsed.screenshots : [];
+  const screenshots = imageUrls.map((_, index) => {
+    const match = generatedScreens.find((item) => item && typeof item === "object" && Number((item as Record<string, unknown>).index) === index) as Record<string, unknown> | undefined;
+    const hotspots = Array.isArray(match?.hotspots) ? match.hotspots.slice(0, 12).flatMap((item, pointIndex) => {
+      if (!item || typeof item !== "object") return [];
+      const h = item as Record<string, unknown>;
+      const number = (key: string) => {
+        const value = Number(h[key]);
+        return Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0;
+      };
+      const title = clean(h.title, 120);
+      if (!title) return [];
+      const x = number("x"), y = number("y");
+      return [{
+        id: `ai-${index + 1}-${pointIndex + 1}-${crypto.randomUUID().slice(0, 8)}`,
+        x, y, w: Math.max(1, Math.min(number("w"), 100 - x)),
+        h: Math.max(1, Math.min(number("h"), 100 - y)),
+        title, description: clean(h.description, 1000),
+        ...(clean(h.tip, 300) ? { tip: clean(h.tip, 300) } : {}),
+      }];
+    }) : [];
+    return { index, caption: clean(match?.caption, 250), hotspots };
+  });
 
   return {
     moduleTitle: clean(parsed.moduleTitle, 120),
@@ -168,8 +191,8 @@ Coordenadas x, y, w, h devem ser percentuais de 0 a 100, aproximando retângulos
     title: clean(parsed.title, 120),
     summary: clean(parsed.summary, 500),
     path: clean(parsed.path, 250),
-    content: clean(parsed.content, 12000),
-    hotspots,
+    content: clean(parsed.content, 20000),
+    screenshots,
   };
 }
 
@@ -178,18 +201,18 @@ Deno.serve(async (request: Request) => {
   if (request.method !== "POST") return reply(405, { error: "Method not allowed" });
 
   try {
-    const body = await request.json() as { action?: string; lessonId?: string; imageBase64?: string; mimeType?: string };
+    const body = await request.json() as { action?: string; lessonId?: string; imageUrls?: string[] };
     const baseUrl = env("SUPABASE_URL");
     const serviceKey = env("SUPABASE_SERVICE_ROLE_KEY");
     const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
 
     if (body.action === "generate-lesson") {
       if (!(await requireAdmin(request))) return reply(401, { error: "Acesso administrativo necessário." });
-      if (typeof body.imageBase64 !== "string" || typeof body.mimeType !== "string") {
-        return reply(400, { error: "Envie um print para gerar a aula." });
+      if (!Array.isArray(body.imageUrls) || body.imageUrls.length < 1 || body.imageUrls.length > 8) {
+        return reply(400, { error: "Envie de 1 a 8 prints para gerar a aula." });
       }
       try {
-        const generated = await generateLessonFromImage(body.imageBase64, body.mimeType);
+        const generated = await generateLessonFromImages(body.imageUrls);
         return reply(200, generated);
       } catch (error) {
         console.error("lesson generation failed", error);
