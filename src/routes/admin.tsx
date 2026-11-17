@@ -53,6 +53,60 @@ const ADMIN_SESSION_KEY = "future-manual-admin-session-v1";
 
 const COURSE_IMAGES_BUCKET = "course-images";
 
+
+function encodeMetadata(value: string) {
+  return btoa(unescape(encodeURIComponent(value)));
+}
+
+async function uploadCourseVideo(file: File, lessonId: string, accessToken: string): Promise<string> {
+  if (!file.type.startsWith("video/")) throw new Error("Selecione um arquivo de vídeo.");
+  const safeName = file.name.normalize("NFKD").replace(/[^a-zA-Z0-9._-]+/g, "-").slice(-90) || "video.mp4";
+  const path = `lessons/${lessonId}/${newId("video")}-${safeName}`;
+  const endpoint = "https://itbppoailqkuxajesgys.storage.supabase.co/storage/v1/upload/resumable";
+  const metadata = [
+    `bucketName ${encodeMetadata("course-videos")}`,
+    `objectName ${encodeMetadata(path)}`,
+    `contentType ${encodeMetadata(file.type || "video/mp4")}`,
+    `cacheControl ${encodeMetadata("3600")}`,
+  ].join(",");
+  const created = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_PUBLISHABLE_KEY,
+      Authorization: `Bearer ${accessToken}`,
+      "Tus-Resumable": "1.0.0",
+      "Upload-Length": String(file.size),
+      "Upload-Metadata": metadata,
+      "x-upsert": "false",
+    },
+  });
+  if (!created.ok) throw new Error((await created.text().catch(() => "")) || "Não foi possível iniciar o envio do vídeo.");
+  const location = created.headers.get("Location");
+  if (!location) throw new Error("O armazenamento não retornou o endereço de envio do vídeo.");
+  const uploadUrl = new URL(location, endpoint).toString();
+  const chunkSize = 6 * 1024 * 1024;
+  let offset = 0;
+  while (offset < file.size) {
+    const chunk = file.slice(offset, Math.min(offset + chunkSize, file.size));
+    const response = await fetch(uploadUrl, {
+      method: "PATCH",
+      headers: {
+        apikey: SUPABASE_PUBLISHABLE_KEY,
+        Authorization: `Bearer ${accessToken}`,
+        "Tus-Resumable": "1.0.0",
+        "Upload-Offset": String(offset),
+        "Content-Type": "application/offset+octet-stream",
+      },
+      body: chunk,
+    });
+    if (!response.ok) throw new Error((await response.text().catch(() => "")) || "O envio do vídeo foi interrompido.");
+    const nextOffset = Number(response.headers.get("Upload-Offset"));
+    if (!Number.isFinite(nextOffset) || nextOffset <= offset) throw new Error("O armazenamento não confirmou o progresso do vídeo.");
+    offset = nextOffset;
+  }
+  return path;
+}
+
 async function uploadCourseImage(file: File, lessonId: string, accessToken: string): Promise<string> {
   const blob = await fileToCompressedBlob(file);
   const path = `lessons/${lessonId}/${newId("print")}.jpg`;
@@ -554,6 +608,7 @@ function LessonEditor({
 }) {
   const [selected, setSelected] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLInputElement>(null);
   const mod = course.modules.find((m) => m.lessonIds.includes(l.id));
   const posInModule = mod ? mod.lessonIds.indexOf(l.id) : -1;
 
@@ -570,6 +625,18 @@ function LessonEditor({
       toast.success("Print compactado e enviado ao armazenamento do manual.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não consegui enviar esta imagem.");
+    }
+  };
+
+
+  const uploadVideo = async (file: File) => {
+    try {
+      if (!accessToken) throw new Error("Entre novamente no painel para enviar vídeos.");
+      const path = await uploadCourseVideo(file, l.id, accessToken);
+      patch({ video: path });
+      toast.success("Vídeo enviado ao armazenamento privado do manual. Clique em Salvar alterações.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não consegui enviar este vídeo.");
     }
   };
 
@@ -627,8 +694,13 @@ function LessonEditor({
           <Field label="Resumo">
             <Input value={l.summary} onChange={(e) => patch({ summary: e.target.value })} />
           </Field>
-          <Field label="Vídeo (YouTube, Vimeo ou link .mp4)" hint="Suba o vídeo no YouTube como Não listado e cole o link aqui.">
-            <Input value={l.video ?? ""} placeholder="https://youtu.be/..." onChange={(e) => patch({ video: e.target.value || undefined })} />
+          <Field label="Vídeo (YouTube, Vimeo ou link direto)" hint="Cole um link externo ou envie um arquivo para o armazenamento privado do manual.">
+            <div className="space-y-2">
+              <Input value={l.video?.startsWith("http") ? l.video : ""} placeholder="https://youtu.be/..." onChange={(e) => patch({ video: e.target.value || undefined })} />
+              <input ref={videoRef} type="file" accept="video/mp4,video/webm,video/quicktime,video/x-matroska" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadVideo(f); e.target.value = ""; }} />
+              <Button type="button" variant="outline" size="sm" onClick={() => videoRef.current?.click()}><Upload /> Enviar vídeo do computador</Button>
+              {l.video && !l.video.startsWith("http") && <p className="text-xs text-muted-foreground">Vídeo enviado: {l.video.split("/").pop()}</p>}
+            </div>
           </Field>
         </div>
         <Field label="Passo a passo" hint="Use **negrito**, listas com 1. 2. 3. e - para tópicos.">
