@@ -109,6 +109,13 @@ Deno.serve(async (request: Request) => {
         return reply(401, { error: "Usuário ou senha inválidos." });
       }
 
+      // Diferencia ausência de administrador de uma senha digitada incorretamente.
+      const listed = await adminRequest("users?page=1&per_page=100", "GET");
+      const users = Array.isArray(listed.data.users) ? listed.data.users as Array<{ app_metadata?: { role?: string } }> : [];
+      if (!users.some((candidate) => candidate.app_metadata?.role === "admin")) {
+        return reply(409, { error: "Primeiro acesso ainda não configurado. Clique em Configurar primeiro acesso para criar o administrador." });
+      }
+
       const response = await fetch(`${env("SUPABASE_URL")}/auth/v1/token?grant_type=password`, {
         method: "POST",
         headers: {
