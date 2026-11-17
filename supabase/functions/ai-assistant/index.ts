@@ -63,7 +63,7 @@ function textFromMessage(message?: UIMessage) {
   return message.parts
     .filter((part): part is { type: "text"; text: string } => part.type === "text")
     .map((part) => part.text)
-    .join("\\n")
+    .join("\n")
     .trim();
 }
 
@@ -75,15 +75,15 @@ function imageDataFromMessage(message?: UIMessage) {
 
 function sanitizeText(value: string) {
   return value
-    .replace(/\\b\\d{3}\\.?\\d{3}\\.?\\d{3}-?\\d{2}\\b/g, "[CPF ocultado]")
-    .replace(/\\b\\d{2}\\.?\\d{3}\\.?\\d{3}\\/\\?\\d{4}-?\\d{2}\\b/g, "[CNPJ ocultado]")
-    .replace(/\\s+/g, " ")
+    .replace(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g, "[CPF ocultado]")
+    .replace(/\b\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}\b/g, "[CNPJ ocultado]")
+    .replace(/\s+/g, " ")
     .trim()
     .slice(0, 4000);
 }
 
 function isLikelyError(text: string, hasImage: boolean) {
-  return hasImage || /erro|rejei\\w*|falha|inv[aá]lid|n[aã]o consigo|n[aã]o funciona|exception|error|c[oó]digo\\s*\\d/i.test(text);
+  return hasImage || /erro|rejei\w*|falha|inv[aá]lid|n[aã]o consigo|n[aã]o funciona|exception|error|c[oó]digo\s*\d/i.test(text);
 }
 
 async function sha256(value: string) {
@@ -95,7 +95,7 @@ async function sha256(value: string) {
 async function errorFingerprint(message: UIMessage) {
   const image = imageDataFromMessage(message);
   if (image) return { fingerprint: await sha256(image), signature: "imagem:" + (await sha256(image)).slice(0, 24), hasImage: true };
-  const normalized = sanitizeText(textFromMessage(message)).normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").toLowerCase();
+  const normalized = sanitizeText(textFromMessage(message)).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   if (!normalized) return null;
   return { fingerprint: await sha256(normalized), signature: normalized.slice(0, 240), hasImage: false };
 }
@@ -153,8 +153,8 @@ function cachedAnswer(solution: string) {
   ];
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
-      for (const event of events) controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\\n\\n`));
-      controller.enqueue(encoder.encode("data: [DONE]\\n\\n"));
+      for (const event of events) controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       controller.close();
     },
   });
