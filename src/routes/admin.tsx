@@ -170,14 +170,25 @@ function AdminPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
-  // Acesso administrativo exige autenticação explícita a cada abertura do painel.
-  // Não restauramos sessão do sessionStorage: isso impedia o formulário de senha de aparecer.
+  // A sessão só é aceita quando veio do formulário de login do modal do cabeçalho.
+  // A chave é consumida imediatamente para não manter credenciais pendentes no navegador.
   const storeSession = (next: AdminSession) => {
     setSession(next);
   };
 
   useEffect(() => {
+    const raw = sessionStorage.getItem(ADMIN_SESSION_KEY);
     sessionStorage.removeItem(ADMIN_SESSION_KEY);
+    if (!raw) return;
+    try {
+      const next = JSON.parse(raw) as AdminSession & { mustChangePassword?: boolean };
+      if (!next.access_token) return;
+      storeSession(next);
+      setMustChangePassword(next.mustChangePassword === true);
+      setStatus("signed-in");
+    } catch {
+      setStatus("signed-out");
+    }
   }, []);
 
   const login = async (event: React.FormEvent<HTMLFormElement>) => {
