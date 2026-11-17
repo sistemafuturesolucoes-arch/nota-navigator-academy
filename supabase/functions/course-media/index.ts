@@ -1,3 +1,6 @@
+import { createGoogleGenerativeAI } from "npm:@ai-sdk/google@4.0.121";
+import { generateText } from "npm:ai@7.0.170";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, apikey, content-type",
@@ -83,15 +86,116 @@ async function importOriginalPrints() {
   return results;
 }
 
+
+async function generateLessonFromImage(imageBase64: string, mimeType: string) {
+  const apiKey = env("GEMINI_API_KEY");
+  if (!["image/png", "image/jpeg", "image/webp"].includes(mimeType)) {
+    throw new Error("Formato de imagem não suportado. Envie PNG, JPG ou WEBP.");
+  }
+  if (!imageBase64 || imageBase64.length > 12 * 1024 * 1024) {
+    throw new Error("O print está vazio ou é muito grande. Envie uma imagem menor que 9 MB.");
+  }
+
+  const bytes = Uint8Array.from(atob(imageBase64), (character) => character.charCodeAt(0));
+  const google = createGoogleGenerativeAI({ apiKey });
+  const model = Deno.env.get("GEMINI_MODEL") || "gemini-3.5-flash-lite";
+  const prompt = `Analise esta captura de tela do sistema Emissor Future e crie o conteúdo de uma aula de treinamento em português brasileiro.
+Escreva como um instrutor humano, claro e paciente, que ensina alguém que está usando o sistema pela primeira vez.
+Não invente informações que não estejam visíveis. Se o caminho exato do menu não puder ser inferido, deixe path como string vazia.
+Responda SOMENTE com JSON válido, sem markdown ou comentários, neste formato:
+{
+  "moduleTitle": "nome curto e organizado para o módulo",
+  "moduleDescription": "descrição amigável do módulo em 1 ou 2 frases",
+  "title": "título da aula",
+  "summary": "resumo claro do que o usuário vai aprender",
+  "path": "caminho no sistema, se visível ou claramente inferível",
+  "content": "aula completa em Markdown, com introdução, objetivo, explicação da tela e passos numerados. Explique o que preencher, o que conferir e como concluir. Não invente campos ou botões.",
+  "hotspots": [
+    {
+      "x": 10,
+      "y": 20,
+      "w": 15,
+      "h": 8,
+      "title": "nome visível do botão ou campo",
+      "description": "explicação simples e natural da função",
+      "tip": "dica prática ou string vazia"
+    }
+  ]
+}
+Coordenadas x, y, w, h devem ser percentuais de 0 a 100, aproximando retângulos pequenos ao redor de elementos que estejam realmente visíveis. Inclua no máximo 12 itens importantes; não crie hotspots para elementos que não consiga identificar. A aula deve ser útil mesmo que não seja possível identificar todos os elementos.`;
+  const result = await generateText({
+    model: google(model),
+    messages: [{
+      role: "user",
+      content: [
+        { type: "text", text: prompt },
+        { type: "image", image: bytes, mimeType },
+      ],
+    }],
+    maxOutputTokens: 6000,
+    maxRetries: 1,
+  });
+
+  const raw = result.text.trim();
+  const jsonText = raw.match(/\\{[\\s\\S]*\\}/)?.[0];
+  if (!jsonText) throw new Error("A IA não conseguiu montar a aula em formato válido. Tente outro print.");
+  const parsed = JSON.parse(jsonText) as Record<string, unknown>;
+  const clean = (value: unknown, max = 12000) => typeof value === "string" ? value.trim().slice(0, max) : "";
+  const hotspots = Array.isArray(parsed.hotspots) ? parsed.hotspots.slice(0, 12).flatMap((item, index) => {
+    if (!item || typeof item !== "object") return [];
+    const h = item as Record<string, unknown>;
+    const number = (key: string) => {
+      const value = Number(h[key]);
+      return Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0;
+    };
+    const title = clean(h.title, 120);
+    if (!title) return [];
+    const x = number("x"), y = number("y");
+    const w = Math.max(1, Math.min(number("w"), 100 - x));
+    const height = Math.max(1, Math.min(number("h"), 100 - y));
+    return [{
+      id: `ai-${index + 1}-${crypto.randomUUID().slice(0, 8)}`,
+      x, y, w, h: height,
+      title,
+      description: clean(h.description, 1000),
+      ...(clean(h.tip, 300) ? { tip: clean(h.tip, 300) } : {}),
+    }];
+  }) : [];
+
+  return {
+    moduleTitle: clean(parsed.moduleTitle, 120),
+    moduleDescription: clean(parsed.moduleDescription, 500),
+    title: clean(parsed.title, 120),
+    summary: clean(parsed.summary, 500),
+    path: clean(parsed.path, 250),
+    content: clean(parsed.content, 12000),
+    hotspots,
+  };
+}
+
 Deno.serve(async (request: Request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "POST") return reply(405, { error: "Method not allowed" });
 
   try {
-    const body = await request.json() as { action?: string; lessonId?: string };
+    const body = await request.json() as { action?: string; lessonId?: string; imageBase64?: string; mimeType?: string };
     const baseUrl = env("SUPABASE_URL");
     const serviceKey = env("SUPABASE_SERVICE_ROLE_KEY");
     const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
+
+    if (body.action === "generate-lesson") {
+      if (!(await requireAdmin(request))) return reply(401, { error: "Acesso administrativo necessário." });
+      if (typeof body.imageBase64 !== "string" || typeof body.mimeType !== "string") {
+        return reply(400, { error: "Envie um print para gerar a aula." });
+      }
+      try {
+        const generated = await generateLessonFromImage(body.imageBase64, body.mimeType);
+        return reply(200, generated);
+      } catch (error) {
+        console.error("lesson generation failed", error);
+        return reply(502, { error: error instanceof Error ? error.message : "Não foi possível gerar a aula agora." });
+      }
+    }
 
     if (body.action === "import-original-prints") {
       if (!(await requireAdmin(request))) return reply(401, { error: "Acesso administrativo necessário." });
