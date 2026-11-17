@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { Hotspot } from "@/lib/course/types";
 import { cn } from "@/lib/utils";
@@ -30,6 +30,11 @@ export function HotspotEditor({
   const ref = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const [draft, setDraft] = useState<Pick<Hotspot, "x" | "y" | "w" | "h"> | null>(null);
+  const [imageUnavailable, setImageUnavailable] = useState(false);
+
+  useEffect(() => {
+    setImageUnavailable(false);
+  }, [image]);
 
   const pct = (e: React.PointerEvent) => {
     const r = ref.current!.getBoundingClientRect();
@@ -82,12 +87,19 @@ export function HotspotEditor({
     <div
       ref={ref}
       className="relative cursor-crosshair touch-none select-none overflow-hidden rounded-xl border bg-card"
-      onPointerDown={onDown}
-      onPointerMove={onMove}
-      onPointerUp={onUp}
+      onPointerDown={imageUnavailable ? undefined : onDown}
+      onPointerMove={imageUnavailable ? undefined : onMove}
+      onPointerUp={imageUnavailable ? undefined : onUp}
     >
-      <img src={image} alt="" className="pointer-events-none block w-full" draggable={false} />
-      {hotspots.map((h, i) => {
+      {imageUnavailable ? (
+        <div className="flex min-h-[260px] flex-col items-center justify-center gap-2 p-8 text-center">
+          <p className="font-semibold">Print original indisponível</p>
+          <p className="max-w-md text-sm text-muted-foreground">Este print ainda não foi incluído no repositório publicado. Use “Trocar print” para carregar a imagem original quando estiver disponível.</p>
+        </div>
+      ) : (
+        <img src={image} alt="" onError={() => setImageUnavailable(true)} className="pointer-events-none block w-full" draggable={false} />
+      )}
+      {!imageUnavailable && hotspots.map((h, i) => {
         const sel = h.id === selectedId;
         return (
           <div
@@ -121,7 +133,7 @@ export function HotspotEditor({
           </div>
         );
       })}
-      {draft && (
+      {!imageUnavailable && draft && (
         <div
           className="pointer-events-none absolute z-30 rounded-md border-2 border-dashed border-lime bg-lime/20"
           style={{ left: `${draft.x}%`, top: `${draft.y}%`, width: `${draft.w}%`, height: `${draft.h}%` }}
