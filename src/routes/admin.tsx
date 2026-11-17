@@ -27,6 +27,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { fileToCompressedBlob } from "@/lib/course/image";
 import { loadCourseFromSupabase, newId, resetCourse, saveCourseToSupabase, useCourse } from "@/lib/course/store";
+import { seedCourse } from "@/lib/course/seed";
 import type { Course, Hotspot, Lesson, Module } from "@/lib/course/types";
 import { cn } from "@/lib/utils";
 
@@ -442,7 +443,8 @@ function AdminWorkspace({ accessToken }: { accessToken: string }) {
           onClick={() => {
             if (!window.confirm("Voltar ao conteúdo original? Suas alterações serão perdidas.")) return;
             resetCourse();
-            setDirty(false);
+            setDraft(seedCourse);
+            setDirty(true);
             setSel(null);
           }}
         >
