@@ -10,6 +10,13 @@ export type Hotspot = {
   tip?: string | undefined;
 };
 
+export type LessonScreenshot = {
+  id: string;
+  image: string;
+  caption?: string | undefined;
+  hotspots: Hotspot[];
+};
+
 export type Lesson = {
   id: string;
   moduleId: string;
@@ -17,7 +24,10 @@ export type Lesson = {
   summary: string;
   /** Path the user follows inside the emissor, e.g. "Cadastros > Produtos". */
   path?: string | undefined;
+  /** Legacy first screenshot field, kept for compatibility with existing lessons. */
   image?: string | undefined;
+  /** All screenshots belonging to this lesson, each with its own clickable explanations. */
+  screenshots?: LessonScreenshot[] | undefined;
   video?: string | undefined;
   content: string;
   hotspots: Hotspot[];
