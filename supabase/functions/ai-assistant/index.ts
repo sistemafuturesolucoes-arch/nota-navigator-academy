@@ -53,7 +53,7 @@ Deno.serve(async (request: Request) => {
     const tela = typeof body.tela === "string" ? body.tela.slice(0, 80) : undefined;
 
     const google = createGoogleGenerativeAI({ apiKey });
-    const model = Deno.env.get("GEMINI_MODEL") || "gemini-3.8-flash";
+    const model = Deno.env.get("GEMINI_MODEL") || "gemini-3.5-flash-lite";
     const result = streamText({
       model: google(model),
       system: buildSystemPrompt(knowledge, tela),
@@ -68,7 +68,7 @@ Deno.serve(async (request: Request) => {
       headers: corsHeaders,
       onError: (error) => {
         console.error("assistant stream error", error);
-        return "Não consegui responder agora. Verifique a chave e as permissões do Gemini e tente novamente.";
+        return "O serviço de IA está temporariamente sobrecarregado. Tente novamente em instantes.";
       },
     });
   } catch (error) {
