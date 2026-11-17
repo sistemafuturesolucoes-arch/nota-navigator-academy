@@ -62,7 +62,6 @@ export function AppHeader() {
 
   const openPanel = () => {
     setError("");
-    setNotice("");
     setPanelOpen(true);
   };
 
