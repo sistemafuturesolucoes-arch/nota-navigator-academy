@@ -375,6 +375,12 @@ function AdminWorkspace({ accessToken }: { accessToken: string }) {
     }
   };
 
+  const saveGeneratedCourse = async (next: Course) => {
+    await saveCourseToSupabase(next, accessToken);
+    setDraft(next);
+    setDirty(false);
+  };
+
   const recoverOriginalPrints = async () => {
     try {
       await saveCourseToSupabase(draft, accessToken);
@@ -558,7 +564,7 @@ function AdminWorkspace({ accessToken }: { accessToken: string }) {
               onDeleted={() => setSel(null)}
             />
           ) : sel?.kind === "lesson" && draft.lessons[sel.id] ? (
-            <LessonEditor key={sel.id} course={draft} lesson={draft.lessons[sel.id]!} update={update} accessToken={accessToken} onDeleted={() => setSel(null)} />
+            <LessonEditor key={sel.id} course={draft} lesson={draft.lessons[sel.id]!} update={update} accessToken={accessToken} onSaveGenerated={saveGeneratedCourse} onDeleted={() => setSel(null)} />
           ) : (
             <div className="flex h-full min-h-80 flex-col items-center justify-center rounded-2xl border border-dashed bg-card p-10 text-center">
               <ImageUp className="mb-3 size-10 text-primary" />
@@ -771,12 +777,14 @@ function LessonEditor({
   lesson: l,
   update,
   onDeleted,
+  onSaveGenerated,
   accessToken,
 }: {
   course: Course;
   lesson: Lesson;
   update: Updater;
   onDeleted: () => void;
+  onSaveGenerated: (course: Course) => Promise<void>;
   accessToken: string;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
@@ -852,7 +860,8 @@ function LessonEditor({
         const generated = data.screenshots?.find((item) => item.index === index);
         return { ...shot, caption: generated?.caption || shot.caption, hotspots: generated?.hotspots ?? [] };
       });
-      patch({
+      const generatedLesson: Lesson = {
+        ...l,
         ...(data.title ? { title: data.title } : {}),
         ...(data.summary ? { summary: data.summary } : {}),
         ...(data.path ? { path: data.path } : {}),
@@ -860,18 +869,28 @@ function LessonEditor({
         screenshots: generatedScreens,
         image: generatedScreens[0]?.image,
         hotspots: generatedScreens[0]?.hotspots ?? [],
-      });
+      };
+      const nextCourse: Course = {
+        ...course,
+        lessons: { ...course.lessons, [l.id]: generatedLesson },
+        modules: course.modules.map((item) => item.id === mod?.id && data.moduleTitle
+          ? {
+              ...item,
+              title: item.title === "Novo módulo" ? data.moduleTitle : item.title,
+              description: item.description || data.moduleDescription || item.description,
+            }
+          : item),
+      };
+      update(() => nextCourse);
       setActiveScreenshotId(generatedScreens[0]?.id ?? null);
-      if (mod && data.moduleTitle && (mod.title === "Novo módulo" || !mod.description.trim())) {
-        update((courseDraft) => ({
-          ...courseDraft,
-          modules: courseDraft.modules.map((item) => item.id === mod.id
-            ? { ...item, title: mod.title === "Novo módulo" ? data.moduleTitle! : item.title,
-                description: item.description || data.moduleDescription || item.description }
-            : item),
-        }));
+      try {
+        await onSaveGenerated(nextCourse);
+        toast.success("Aula detalhada gerada e salva com todos os prints e marcações. O áudio e os textos ficam disponíveis na aula.");
+      } catch (saveError) {
+        toast.error(saveError instanceof Error
+          ? `A aula foi gerada, mas não consegui salvar no banco: ${saveError.message}. Clique em Salvar alterações.`
+          : "A aula foi gerada, mas não consegui salvar no banco. Clique em Salvar alterações.");
       }
-      toast.success("Aula detalhada gerada com todos os prints e marcações. Revise e clique em Salvar alterações.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não consegui gerar a aula.");
     } finally {
