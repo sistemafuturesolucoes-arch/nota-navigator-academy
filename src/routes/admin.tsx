@@ -1014,6 +1014,8 @@ function LessonEditor({
                     <span className="max-w-36 truncate">{shot.caption || `Print ${index + 1}`}</span>
                     <span className="text-xs text-muted-foreground">{shot.hotspots.length} itens</span>
                   </button>
+                  <Button type="button" variant="ghost" size="icon-xs" aria-label="Mover print para cima" disabled={index === 0} onClick={() => patchScreenshots(move(screenshots, index, -1))}><ArrowUp /></Button>
+                  <Button type="button" variant="ghost" size="icon-xs" aria-label="Mover print para baixo" disabled={index === screenshots.length - 1} onClick={() => patchScreenshots(move(screenshots, index, 1))}><ArrowDown /></Button>
                   <Button type="button" variant="ghost" size="icon-xs" aria-label="Remover print" onClick={() => removeScreenshot(shot.id)}><Trash2 /></Button>
                 </div>
               ))}
