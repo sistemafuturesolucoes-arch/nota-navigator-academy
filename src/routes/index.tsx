@@ -1,5 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { ArrowRight, Bot, Camera, CheckCircle2, Clock3, Play, ScanSearch, Volume2 } from "lucide-react";
+import { useState } from "react";
 
 import dashboard from "@/assets/prints/dashboard.png.asset.json";
 import { ModuleIcon } from "@/components/manual/ModuleIcon";
@@ -36,6 +37,7 @@ const FEATURES = [
 ];
 
 function Home() {
+  const [heroImageUnavailable, setHeroImageUnavailable] = useState(false);
   const course = useCourse();
   const done = new Set(useProgress());
   const lessons = orderedLessons(course);
@@ -80,7 +82,14 @@ function Home() {
 
           <div className="relative">
             <div className="relative rotate-1 overflow-hidden rounded-2xl border border-ink-foreground/15 bg-card shadow-elegant">
-              <img src={dashboard.url} alt="Painel do Emissor Future" className="block w-full" />
+              {heroImageUnavailable ? (
+                <div className="flex min-h-[280px] flex-col items-center justify-center gap-2 bg-ink/90 p-8 text-center text-ink-foreground">
+                  <p className="font-semibold">Print original do painel indisponível</p>
+                  <p className="max-w-sm text-sm text-ink-muted">O arquivo da tela ainda não está incluído na publicação independente.</p>
+                </div>
+              ) : (
+                <img src={dashboard.url} alt="Painel do Emissor Future" onError={() => setHeroImageUnavailable(true)} className="block w-full" />
+              )}
               {[
                 { x: 6.4, y: 16.4, w: 22.5, h: 10.8, n: 1 },
                 { x: 0, y: 27, w: 5, h: 13.6, n: 2 },

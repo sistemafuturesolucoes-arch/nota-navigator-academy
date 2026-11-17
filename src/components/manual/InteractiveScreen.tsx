@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, Lightbulb, X } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import type { Hotspot } from "@/lib/course/types";
@@ -38,6 +38,11 @@ export function InteractiveScreen({
   const activeIndex = hotspots.findIndex((h) => h.id === activeId);
   const active = activeIndex >= 0 ? hotspots[activeIndex] : undefined;
   const wrapRef = useRef<HTMLDivElement>(null);
+  const [imageUnavailable, setImageUnavailable] = useState(false);
+
+  useEffect(() => {
+    setImageUnavailable(false);
+  }, [image]);
 
   useEffect(() => {
     if (!active || !wrapRef.current) return;
@@ -53,11 +58,18 @@ export function InteractiveScreen({
         className="relative overflow-hidden rounded-xl border bg-card shadow-card"
         onClick={() => mode !== "tour" && onSelect(null)}
       >
-        <img src={image} alt={alt} className="block h-auto w-full select-none" draggable={false} />
+        {imageUnavailable ? (
+          <div role="img" aria-label={alt} className="flex min-h-[280px] flex-col items-center justify-center gap-3 bg-muted/40 p-8 text-center">
+            <div className="text-lg font-semibold">Print original indisponível</div>
+            <p className="max-w-md text-sm text-muted-foreground">A imagem desta tela ainda não está incluída nos arquivos publicados. O conteúdo e as explicações da aula continuam disponíveis.</p>
+          </div>
+        ) : (
+          <img src={image} alt={alt} onError={() => setImageUnavailable(true)} className="block h-auto w-full select-none" draggable={false} />
+        )}
 
-        {mode === "tour" && !active && <div className="absolute inset-0 bg-[var(--spotlight-veil)]" />}
+        {!imageUnavailable && mode === "tour" && !active && <div className="absolute inset-0 bg-[var(--spotlight-veil)]" />}
 
-        {hotspots.map((h, i) => {
+        {!imageUnavailable && hotspots.map((h, i) => {
           const isActive = h.id === activeId;
           if (mode === "tour" && !isActive) return null;
           return (
@@ -101,7 +113,7 @@ export function InteractiveScreen({
         })}
       </div>
 
-      {active && (
+      {active && !imageUnavailable && (
         <HotspotCard
           hotspot={active}
           index={activeIndex}

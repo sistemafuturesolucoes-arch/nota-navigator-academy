@@ -10,6 +10,8 @@ import {
   Info,
   RotateCcw,
   Save,
+  ShieldCheck,
+  LogOut,
   Trash2,
   Upload,
 } from "lucide-react";
@@ -23,8 +25,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { fileToCompressedDataUrl } from "@/lib/course/image";
-import { newId, resetCourse, saveCourse, useCourse } from "@/lib/course/store";
+import { fileToCompressedBlob } from "@/lib/course/image";
+import { loadCourseFromSupabase, newId, resetCourse, saveCourseToSupabase, useCourse } from "@/lib/course/store";
+import { seedCourse } from "@/lib/course/seed";
 import type { Course, Hotspot, Lesson, Module } from "@/lib/course/types";
 import { cn } from "@/lib/utils";
 
@@ -45,6 +48,265 @@ export const Route = createFileRoute("/admin")({
 
 type Selection = { kind: "module"; id: string } | { kind: "lesson"; id: string } | null;
 
+const SUPABASE_URL = "https://itbppoailqkuxajesgys.supabase.co";
+const ADMIN_AUTH_URL = `${SUPABASE_URL}/functions/v1/admin-auth`;
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_J3-cgRigKn2QardNRaOFRQ_Jja51yof";
+const ADMIN_SESSION_KEY = "future-manual-admin-session-v1";
+
+const COURSE_IMAGES_BUCKET = "course-images";
+
+
+function encodeMetadata(value: string) {
+  return btoa(unescape(encodeURIComponent(value)));
+}
+
+async function uploadCourseVideo(file: File, lessonId: string, accessToken: string): Promise<string> {
+  if (!file.type.startsWith("video/")) throw new Error("Selecione um arquivo de vídeo.");
+  const safeName = file.name.normalize("NFKD").replace(/[^a-zA-Z0-9._-]+/g, "-").slice(-90) || "video.mp4";
+  const path = `lessons/${lessonId}/${newId("video")}-${safeName}`;
+  const endpoint = "https://itbppoailqkuxajesgys.storage.supabase.co/storage/v1/upload/resumable";
+  const metadata = [
+    `bucketName ${encodeMetadata("course-videos")}`,
+    `objectName ${encodeMetadata(path)}`,
+    `contentType ${encodeMetadata(file.type || "video/mp4")}`,
+    `cacheControl ${encodeMetadata("3600")}`,
+  ].join(",");
+  const created = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_PUBLISHABLE_KEY,
+      Authorization: `Bearer ${accessToken}`,
+      "Tus-Resumable": "1.0.0",
+      "Upload-Length": String(file.size),
+      "Upload-Metadata": metadata,
+      "x-upsert": "false",
+    },
+  });
+  if (!created.ok) throw new Error((await created.text().catch(() => "")) || "Não foi possível iniciar o envio do vídeo.");
+  const location = created.headers.get("Location");
+  if (!location) throw new Error("O armazenamento não retornou o endereço de envio do vídeo.");
+  const uploadUrl = new URL(location, endpoint).toString();
+  const chunkSize = 6 * 1024 * 1024;
+  let offset = 0;
+  while (offset < file.size) {
+    const chunk = file.slice(offset, Math.min(offset + chunkSize, file.size));
+    const response = await fetch(uploadUrl, {
+      method: "PATCH",
+      headers: {
+        apikey: SUPABASE_PUBLISHABLE_KEY,
+        Authorization: `Bearer ${accessToken}`,
+        "Tus-Resumable": "1.0.0",
+        "Upload-Offset": String(offset),
+        "Content-Type": "application/offset+octet-stream",
+      },
+      body: chunk,
+    });
+    if (!response.ok) throw new Error((await response.text().catch(() => "")) || "O envio do vídeo foi interrompido.");
+    const nextOffset = Number(response.headers.get("Upload-Offset"));
+    if (!Number.isFinite(nextOffset) || nextOffset <= offset) throw new Error("O armazenamento não confirmou o progresso do vídeo.");
+    offset = nextOffset;
+  }
+  return path;
+}
+
+async function uploadCourseImage(file: File, lessonId: string, accessToken: string): Promise<string> {
+  const blob = await fileToCompressedBlob(file);
+  const path = `lessons/${lessonId}/${newId("print")}.jpg`;
+  const response = await fetch(
+    `https://itbppoailqkuxajesgys.supabase.co/storage/v1/object/${COURSE_IMAGES_BUCKET}/${path}`,
+    {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_PUBLISHABLE_KEY,
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "image/jpeg",
+        "x-upsert": "false",
+      },
+      body: blob,
+    },
+  );
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(detail || "Não foi possível enviar o print ao armazenamento.");
+  }
+  return `https://itbppoailkqkuxajesgys.supabase.co/storage/v1/object/public/${COURSE_IMAGES_BUCKET}/${path}`;
+}
+
+
+
+type AdminSession = {
+  access_token: string;
+  refresh_token: string;
+  expires_in?: number;
+};
+
+async function adminRequest(action: string, body: Record<string, unknown> = {}, token?: string) {
+  const response = await fetch(ADMIN_AUTH_URL, {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_PUBLISHABLE_KEY,
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ action, ...body }),
+  });
+  const data = await response.json().catch(() => ({})) as { error?: string; [key: string]: unknown };
+  if (!response.ok) throw new Error(data.error || "Não foi possível concluir a operação.");
+  return data;
+}
+
+function AdminPage() {
+  const [status, setStatus] = useState<"signed-out" | "signed-in">("signed-out");
+  const [session, setSession] = useState<AdminSession | null>(null);
+  const [mustChangePassword, setMustChangePassword] = useState(false);
+  const [showBootstrap, setShowBootstrap] = useState(false);
+  const [username, setUsername] = useState("admin");
+  const [password, setPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [showPasswordReset, setShowPasswordReset] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  // A sessão só é aceita quando veio do formulário de login do modal do cabeçalho.
+  // A chave é consumida imediatamente para não manter credenciais pendentes no navegador.
+  const storeSession = (next: AdminSession) => {
+    setSession(next);
+  };
+
+  useEffect(() => {
+    const raw = sessionStorage.getItem(ADMIN_SESSION_KEY);
+    sessionStorage.removeItem(ADMIN_SESSION_KEY);
+    if (!raw) return;
+    try {
+      const next = JSON.parse(raw) as AdminSession & { mustChangePassword?: boolean };
+      if (!next.access_token) return;
+      storeSession(next);
+      setMustChangePassword(next.mustChangePassword === true);
+      setStatus("signed-in");
+    } catch {
+      setStatus("signed-out");
+    }
+  }, []);
+
+  const login = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      const data = await adminRequest("login", { username, password }) as unknown as AdminSession & { mustChangePassword?: boolean };
+      storeSession(data);
+      setMustChangePassword(data.mustChangePassword === true);
+      setStatus("signed-in");
+      setPassword("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Falha ao entrar.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const bootstrap = async () => {
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await adminRequest("bootstrap");
+      setNotice("Administrador criado. Entre com usuário admin e senha temporária 123456. Você deverá trocá-la no primeiro acesso.");
+      setShowBootstrap(false);
+      setUsername("admin");
+      setPassword("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível criar o administrador.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const changePassword = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await adminRequest("change-password", { newPassword }, session?.access_token);
+      setMustChangePassword(false);
+      setShowPasswordReset(false);
+      setNewPassword("");
+      setNotice("Senha atualizada com sucesso.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível atualizar a senha.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const logout = () => {
+    if (session?.access_token) void adminRequest("logout", {}, session.access_token).catch(() => undefined);
+    sessionStorage.removeItem(ADMIN_SESSION_KEY);
+    setSession(null);
+    setStatus("signed-out");
+    setMustChangePassword(false);
+  };
+
+  if (status === "signed-out") {
+    return (
+      <main className="flex flex-1 items-center justify-center px-4 py-12">
+        <section className="w-full max-w-md rounded-2xl border bg-card p-6 shadow-card">
+          <div className="mb-5 flex items-center gap-3">
+            <span className="flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary"><ShieldCheck className="size-6" /></span>
+            <div><h1 className="text-xl font-bold">Painel administrativo</h1><p className="text-sm text-muted-foreground">Acesso restrito ao administrador do manual.</p></div>
+          </div>
+          {error && <p role="alert" className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
+          {notice && <p role="status" className="mb-4 rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm">{notice}</p>}
+          {showBootstrap ? (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">O primeiro acesso cria o usuário administrador uma única vez. A senha temporária será 123456 e deverá ser alterada logo após entrar.</p>
+              <Button type="button" className="w-full" disabled={busy} onClick={() => void bootstrap()}>{busy ? "Configurando..." : "Criar administrador"}</Button>
+              <Button type="button" variant="ghost" className="w-full" onClick={() => setShowBootstrap(false)}>Voltar ao login</Button>
+            </div>
+          ) : (
+            <form onSubmit={login} className="space-y-4">
+              <div><Label htmlFor="admin-username">Usuário</Label><Input id="admin-username" autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} required /></div>
+              <div><Label htmlFor="admin-password">Senha</Label><Input id="admin-password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></div>
+              <Button type="submit" className="w-full" disabled={busy}>{busy ? "Entrando..." : "Entrar no painel"}</Button>
+              <Button type="button" variant="ghost" className="w-full" onClick={() => { setShowBootstrap(true); setError(""); }}>Configurar primeiro acesso</Button>
+            </form>
+          )}
+        </section>
+      </main>
+    );
+  }
+
+  if (mustChangePassword || showPasswordReset) {
+    return (
+      <main className="flex flex-1 items-center justify-center px-4 py-12">
+        <section className="w-full max-w-md rounded-2xl border bg-card p-6 shadow-card">
+          <h1 className="text-xl font-bold">{mustChangePassword ? "Troque sua senha" : "Redefinir senha"}</h1>
+          <p className="mt-2 text-sm text-muted-foreground">{mustChangePassword ? "Por segurança, defina uma nova senha antes de acessar o painel." : "Defina uma nova senha para sua conta de administrador."}</p>
+          {error && <p role="alert" className="mt-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
+          <form onSubmit={changePassword} className="mt-5 space-y-4">
+            <div><Label htmlFor="new-admin-password">Nova senha</Label><Input id="new-admin-password" type="password" autoComplete="new-password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} minLength={8} required /></div>
+            <Button type="submit" className="w-full" disabled={busy}>{busy ? "Salvando..." : "Atualizar senha e continuar"}</Button>
+            <Button type="button" variant="ghost" className="w-full" onClick={() => { if (mustChangePassword) logout(); else { setShowPasswordReset(false); setError(""); } }}>{mustChangePassword ? "Sair" : "Cancelar"}</Button>
+          </form>
+        </section>
+      </main>
+    );
+  }
+
+  return (
+    <>
+      <div className="mx-auto flex w-full max-w-[1500px] items-center justify-end gap-3 px-4 pt-4 lg:px-8">
+        <span className="text-xs text-muted-foreground">Administrador autenticado</span>
+        <Button type="button" variant="outline" size="sm" onClick={() => { setShowPasswordReset(true); setError(""); setNotice(""); }}><ShieldCheck className="size-4" /> Redefinir senha</Button>
+        <Button type="button" variant="outline" size="sm" onClick={logout}><LogOut className="size-4" /> Sair</Button>
+      </div>
+      <AdminWorkspace accessToken={session?.access_token ?? ""} />
+    </>
+  );
+}
+
+
 const move = <T,>(arr: T[], i: number, dir: -1 | 1) => {
   const j = i + dir;
   if (j < 0 || j >= arr.length) return arr;
@@ -53,12 +315,20 @@ const move = <T,>(arr: T[], i: number, dir: -1 | 1) => {
   return copy;
 };
 
-function AdminPage() {
+function AdminWorkspace({ accessToken }: { accessToken: string }) {
   const stored = useCourse();
   const [draft, setDraft] = useState<Course>(stored);
   const [dirty, setDirty] = useState(false);
   const [sel, setSel] = useState<Selection>(null);
   const importRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let active = true;
+    void loadCourseFromSupabase(accessToken)
+      .then((course) => { if (active) setDraft(course); })
+      .catch((error) => toast.error(error instanceof Error ? error.message : "Não foi possível carregar as aulas do banco."));
+    return () => { active = false; };
+  }, [accessToken]);
 
   useEffect(() => {
     if (!dirty) setDraft(stored);
@@ -69,13 +339,38 @@ function AdminPage() {
     setDirty(true);
   };
 
-  const save = () => {
+  const save = async () => {
     try {
-      saveCourse(draft);
+      await saveCourseToSupabase(draft, accessToken);
       setDirty(false);
-      toast.success("Alterações salvas");
+      toast.success("Aulas, módulos e mídias salvos no banco de dados.");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Não foi possível salvar.");
+      toast.error(e instanceof Error ? e.message : "Não foi possível salvar no banco.");
+    }
+  };
+
+  const recoverOriginalPrints = async () => {
+    try {
+      await saveCourseToSupabase(draft, accessToken);
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/course-media`, {
+        method: "POST",
+        headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "import-original-prints" }),
+      });
+      const result = await response.json() as { imported?: number; total?: number; results?: Array<{ file: string; ok: boolean; error?: string }> };
+      if (!response.ok && response.status !== 207) throw new Error("Não foi possível recuperar os prints originais.");
+      const refreshed = await loadCourseFromSupabase(accessToken);
+      setDraft(refreshed);
+      setDirty(false);
+      const imported = result.imported ?? 0;
+      const total = result.total ?? 10;
+      if (imported === total) toast.success(`${imported} prints originais recuperados e salvos no Supabase.`);
+      else {
+        const failures = (result.results ?? []).filter((item) => !item.ok).map((item) => `${item.file}: ${item.error}`).join("\\n");
+        toast.error(`${imported} de ${total} prints recuperados. ${failures}`);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao recuperar os prints originais.");
     }
   };
 
@@ -151,12 +446,14 @@ function AdminPage() {
           onClick={() => {
             if (!window.confirm("Voltar ao conteúdo original? Suas alterações serão perdidas.")) return;
             resetCourse();
-            setDirty(false);
+            setDraft(seedCourse);
+            setDirty(true);
             setSel(null);
           }}
         >
           <RotateCcw /> Restaurar original
         </Button>
+        <Button variant="outline" size="sm" onClick={() => void recoverOriginalPrints()}><ImageUp /> Recuperar prints originais</Button>
         <Button onClick={save} disabled={!dirty}>
           <Save /> {dirty ? "Salvar alterações" : "Tudo salvo"}
         </Button>
@@ -234,7 +531,7 @@ function AdminPage() {
               onDeleted={() => setSel(null)}
             />
           ) : sel?.kind === "lesson" && draft.lessons[sel.id] ? (
-            <LessonEditor key={sel.id} course={draft} lesson={draft.lessons[sel.id]!} update={update} onDeleted={() => setSel(null)} />
+            <LessonEditor key={sel.id} course={draft} lesson={draft.lessons[sel.id]!} update={update} accessToken={accessToken} onDeleted={() => setSel(null)} />
           ) : (
             <div className="flex h-full min-h-80 flex-col items-center justify-center rounded-2xl border border-dashed bg-card p-10 text-center">
               <ImageUp className="mb-3 size-10 text-primary" />
@@ -333,14 +630,17 @@ function LessonEditor({
   lesson: l,
   update,
   onDeleted,
+  accessToken,
 }: {
   course: Course;
   lesson: Lesson;
   update: Updater;
   onDeleted: () => void;
+  accessToken: string;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLInputElement>(null);
   const mod = course.modules.find((m) => m.lessonIds.includes(l.id));
   const posInModule = mod ? mod.lessonIds.indexOf(l.id) : -1;
 
@@ -350,10 +650,24 @@ function LessonEditor({
 
   const uploadPrint = async (file: File) => {
     try {
-      patch({ image: await fileToCompressedDataUrl(file) });
-      toast.success("Print carregado. Desenhe as áreas sobre os botões.");
-    } catch {
-      toast.error("Não consegui ler esta imagem.");
+      if (!accessToken) throw new Error("Entre novamente no painel para enviar imagens.");
+      const image = await uploadCourseImage(file, l.id, accessToken);
+      patch({ image });
+      toast.success("Print compactado e enviado ao armazenamento do manual.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não consegui enviar esta imagem.");
+    }
+  };
+
+
+  const uploadVideo = async (file: File) => {
+    try {
+      if (!accessToken) throw new Error("Entre novamente no painel para enviar vídeos.");
+      const path = await uploadCourseVideo(file, l.id, accessToken);
+      patch({ video: path });
+      toast.success("Vídeo enviado ao armazenamento privado do manual. Clique em Salvar alterações.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não consegui enviar este vídeo.");
     }
   };
 
@@ -411,8 +725,13 @@ function LessonEditor({
           <Field label="Resumo">
             <Input value={l.summary} onChange={(e) => patch({ summary: e.target.value })} />
           </Field>
-          <Field label="Vídeo (YouTube, Vimeo ou link .mp4)" hint="Suba o vídeo no YouTube como Não listado e cole o link aqui.">
-            <Input value={l.video ?? ""} placeholder="https://youtu.be/..." onChange={(e) => patch({ video: e.target.value || undefined })} />
+          <Field label="Vídeo (YouTube, Vimeo ou link direto)" hint="Cole um link externo ou envie um arquivo para o armazenamento privado do manual.">
+            <div className="space-y-2">
+              <Input value={l.video?.startsWith("http") ? l.video : ""} placeholder="https://youtu.be/..." onChange={(e) => patch({ video: e.target.value || undefined })} />
+              <input ref={videoRef} type="file" accept="video/mp4,video/webm,video/quicktime,video/x-matroska" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadVideo(f); e.target.value = ""; }} />
+              <Button type="button" variant="outline" size="sm" onClick={() => videoRef.current?.click()}><Upload /> Enviar vídeo do computador</Button>
+              {l.video && !l.video.startsWith("http") && <p className="text-xs text-muted-foreground">Vídeo enviado: {l.video.split("/").pop()}</p>}
+            </div>
           </Field>
         </div>
         <Field label="Passo a passo" hint="Use **negrito**, listas com 1. 2. 3. e - para tópicos.">
