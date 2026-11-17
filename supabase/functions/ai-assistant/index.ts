@@ -15,23 +15,158 @@ function json(status: number, error: string) {
 }
 
 function buildSystemPrompt(knowledge: string, currentScreen?: string) {
-  return `Você é o "Assistente Future", o suporte inteligente do Emissor Future (emissor de notas fiscais da Future Soluções).
-Seu objetivo é que o cliente resolva tudo sozinho, sem precisar chamar o suporte humano.
+  return `Você é o Assistente Future, o orientador virtual do Emissor Future, da Future Soluções.
+Converse como uma pessoa experiente e atenciosa que está ajudando alguém ao lado do computador. Seu jeito deve ser humano, natural, paciente e profissional — nunca pareça um robô ou um manual frio.
 
-Como responder:
-- Sempre em português do Brasil, com linguagem simples, educada e direta. Nada de jargão sem explicar.
-- Para "como faço X", responda com o CAMINHO no sistema em negrito (ex.: **Cadastros > Produtos > Novo Produto**) e depois passos numerados curtos.
-- Explique o que cada campo/botão significa quando for útil.
-- Quando existir uma aula relacionada no manual, termine indicando-a com um link markdown, ex.: [Ver aula: Cadastrar produto](/aula/produto-dados).
-- Se o cliente enviar um PRINT/IMAGEM de erro: 1) transcreva a mensagem de erro que aparece; 2) explique em uma frase o que ela significa; 3) dê os passos para corrigir dentro do sistema; 4) se for algo que depende da SEFAZ, prefeitura, certificado digital ou contabilidade, diga isso claramente.
-- Use apenas as informações do manual abaixo e conhecimento geral sobre documentos fiscais brasileiros (NF-e, NFC-e, NFS-e, CT-e, MDF-e, NCM, CFOP, CST/CSOSN). Nunca invente botões, menus ou telas que não estejam no manual. Se não souber onde algo fica no sistema, diga que não encontrou no manual e sugira o caminho mais provável deixando claro que é uma sugestão.
-- Questões tributárias específicas (qual NCM, qual alíquota, qual CST usar): explique o conceito e recomende confirmar com a contabilidade.
-- Respostas curtas: no máximo ~180 palavras, a não ser que o cliente peça mais detalhes.
-${currentScreen ? `\nO cliente está estudando a aula/tela com id "${currentScreen}" neste momento.` : ""}
+ESTILO DE CONVERSA:
+- Fale sempre em português brasileiro, com palavras simples e frases naturais.
+- Comece acolhendo a dúvida de forma breve e contextual. Evite repetir sempre a mesma saudação.
+- Demonstre que entendeu o problema antes de orientar. Não use frases artificiais como "Com base nas informações fornecidas".
+- Explique o motivo do erro quando houver informação suficiente e depois mostre como resolver.
+- Dê instruções práticas, numeradas e curtas. Informe o caminho exato no sistema em negrito quando estiver documentado.
+- Não despeje informação demais de uma vez. Priorize o que a pessoa precisa fazer agora.
+- Se houver mais de uma possibilidade, explique como identificar qual se aplica.
+- Não culpe o usuário. Seja cordial, encorajador e claro.
+- Não invente telas, botões, menus, códigos fiscais ou procedimentos.
+- Se não encontrar a informação no manual, diga isso com transparência e faça uma pergunta objetiva para esclarecer.
+- Respostas normalmente até 180 palavras, mas aprofunde quando a pessoa pedir.
+
+QUANDO RECEBER PRINT OU IMAGEM DE ERRO:
+1. Leia e transcreva a mensagem visível, sem inventar trechos ilegíveis.
+2. Explique em linguagem simples o que ela quer dizer.
+3. Oriente o usuário passo a passo dentro do Emissor Future.
+4. Se depender da SEFAZ, prefeitura, certificado digital, internet ou contabilidade, deixe isso claro e explique o que deve ser verificado.
+5. Se a imagem estiver cortada ou pouco legível, peça outro print ou a mensagem escrita.
+
+REGRAS DE CONFIABILIDADE:
+- Use o manual abaixo como fonte principal e o conhecimento geral apenas para explicar conceitos.
+- Nunca trate uma hipótese como certeza. Sinalize quando estiver inferindo.
+- Para NCM, CFOP, CST/CSOSN, alíquotas e decisões tributárias, explique o conceito e oriente confirmar com a contabilidade.
+- Quando existir aula relacionada no manual, indique-a com link markdown, por exemplo [Ver aula: Cadastrar produto](/aula/produto-dados).
+- O objetivo é resolver a dúvida sem que o cliente precise chamar o suporte, mas não prometa resolver algo que depende de terceiros.
+
+${currentScreen ? `O cliente está estudando a aula/tela "${currentScreen}" neste momento.` : ""}
 
 === MANUAL DO EMISSOR FUTURE ===
 ${knowledge || "(manual indisponível)"}
 === FIM DO MANUAL ===`;
+}
+
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "https://itbppoailqkuxajesgys.supabase.co";
+
+function latestUserMessage(messages: UIMessage[]) {
+  return [...messages].reverse().find((message) => message.role === "user");
+}
+
+function textFromMessage(message?: UIMessage) {
+  if (!message) return "";
+  return message.parts
+    .filter((part): part is { type: "text"; text: string } => part.type === "text")
+    .map((part) => part.text)
+    .join("\\n")
+    .trim();
+}
+
+function imageDataFromMessage(message?: UIMessage) {
+  if (!message) return "";
+  const file = message.parts.find((part) => part.type === "file" && part.mediaType.startsWith("image/"));
+  return file && file.type === "file" && file.url.startsWith("data:") ? file.url : "";
+}
+
+function sanitizeText(value: string) {
+  return value
+    .replace(/\\b\\d{3}\\.?\\d{3}\\.?\\d{3}-?\\d{2}\\b/g, "[CPF ocultado]")
+    .replace(/\\b\\d{2}\\.?\\d{3}\\.?\\d{3}\\/\\?\\d{4}-?\\d{2}\\b/g, "[CNPJ ocultado]")
+    .replace(/\\s+/g, " ")
+    .trim()
+    .slice(0, 4000);
+}
+
+function isLikelyError(text: string, hasImage: boolean) {
+  return hasImage || /erro|rejei\\w*|falha|inv[aá]lid|n[aã]o consigo|n[aã]o funciona|exception|error|c[oó]digo\\s*\\d/i.test(text);
+}
+
+async function sha256(value: string) {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function errorFingerprint(message: UIMessage) {
+  const image = imageDataFromMessage(message);
+  if (image) return { fingerprint: await sha256(image), signature: "imagem:" + (await sha256(image)).slice(0, 24), hasImage: true };
+  const normalized = sanitizeText(textFromMessage(message)).normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").toLowerCase();
+  if (!normalized) return null;
+  return { fingerprint: await sha256(normalized), signature: normalized.slice(0, 240), hasImage: false };
+}
+
+async function knownSolution(fingerprint: string) {
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!serviceKey) return null;
+  const url = `${SUPABASE_URL}/rest/v1/error_knowledge?fingerprint=eq.${encodeURIComponent(fingerprint)}&status=eq.approved&select=solution,error_message,occurrence_count&limit=1`;
+  const response = await fetch(url, {
+    headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
+  });
+  if (!response.ok) {
+    console.error("error knowledge lookup failed", response.status, await response.text());
+    return null;
+  }
+  const rows = await response.json() as Array<{ solution: string; error_message: string; occurrence_count: number }>;
+  return rows[0] ?? null;
+}
+
+async function recordPendingError(fingerprint: string, signature: string, message: string, solution: string) {
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!serviceKey) {
+    console.warn("SUPABASE_SERVICE_ROLE_KEY ausente; erro não foi armazenado na base de conhecimento.");
+    return;
+  }
+  const category = /nfe|nf-e|nfc|sefaz|tribut|ncm|cfop|cst|csosn/i.test(message) ? "fiscal" : "geral";
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/record_error_occurrence`, {
+    method: "POST",
+    headers: {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      p_fingerprint: fingerprint,
+      p_error_signature: signature,
+      p_error_message: sanitizeText(message),
+      p_category: category,
+      p_solution: sanitizeText(solution),
+    }),
+  });
+  if (!response.ok) console.error("error knowledge save failed", response.status, await response.text());
+}
+
+function cachedAnswer(solution: string) {
+  const messageId = crypto.randomUUID();
+  const textId = crypto.randomUUID();
+  const encoder = new TextEncoder();
+  const events = [
+    { type: "start", messageId },
+    { type: "text-start", id: textId },
+    { type: "text-delta", id: textId, delta: solution },
+    { type: "text-end", id: textId },
+    { type: "finish" },
+  ];
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const event of events) controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\\n\\n`));
+      controller.enqueue(encoder.encode("data: [DONE]\\n\\n"));
+      controller.close();
+    },
+  });
+  return new Response(stream, {
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      "X-Vercel-AI-UI-Message-Stream": "v1",
+      "X-Future-Knowledge-Hit": "true",
+    },
+  });
 }
 
 Deno.serve(async (request: Request) => {
@@ -42,7 +177,7 @@ Deno.serve(async (request: Request) => {
     const apiKey = Deno.env.get("GEMINI_API_KEY");
     if (!apiKey) {
       console.error("GEMINI_API_KEY não está definido nos secrets desta Edge Function.");
-      return json(503, "A chave GEMINI_API_KEY não está disponível nos secrets do Supabase deste projeto.");
+      return json(503, "O serviço de atendimento está temporariamente indisponível.");
     }
 
     const body = await request.json() as { messages?: unknown; knowledge?: unknown; tela?: unknown };
@@ -51,6 +186,19 @@ Deno.serve(async (request: Request) => {
     const messages = (body.messages as UIMessage[]).slice(-30);
     const knowledge = typeof body.knowledge === "string" ? body.knowledge.slice(0, 60000) : "";
     const tela = typeof body.tela === "string" ? body.tela.slice(0, 80) : undefined;
+    const lastUser = latestUserMessage(messages);
+    const userText = textFromMessage(lastUser);
+    const fingerprintData = lastUser && isLikelyError(userText, Boolean(imageDataFromMessage(lastUser)))
+      ? await errorFingerprint(lastUser)
+      : null;
+
+    if (fingerprintData) {
+      const known = await knownSolution(fingerprintData.fingerprint);
+      if (known?.solution) {
+        await recordPendingError(fingerprintData.fingerprint, fingerprintData.signature, userText, "");
+        return cachedAnswer(known.solution);
+      }
+    }
 
     const google = createGoogleGenerativeAI({ apiKey });
     const model = Deno.env.get("GEMINI_MODEL") || "gemini-3.5-flash-lite";
@@ -61,6 +209,11 @@ Deno.serve(async (request: Request) => {
       abortSignal: request.signal,
       maxRetries: 1,
       onError: ({ error }) => console.error("Gemini assistant error", error),
+      onFinish: async ({ text }) => {
+        if (fingerprintData) {
+          await recordPendingError(fingerprintData.fingerprint, fingerprintData.signature, userText, text);
+        }
+      },
     });
 
     return result.toUIMessageStreamResponse({
@@ -68,11 +221,11 @@ Deno.serve(async (request: Request) => {
       headers: corsHeaders,
       onError: (error) => {
         console.error("assistant stream error", error);
-        return "O serviço de IA está temporariamente sobrecarregado. Tente novamente em instantes.";
+        return "Tive uma instabilidade ao preparar a resposta. Pode tentar novamente em alguns instantes?";
       },
     });
   } catch (error) {
     console.error("ai-assistant error", error);
-    return json(500, "O assistente encontrou um erro interno. Tente novamente.");
+    return json(500, "O assistente encontrou uma dificuldade. Tente novamente em instantes.");
   }
 });
