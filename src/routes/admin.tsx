@@ -87,54 +87,15 @@ function AdminPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
+  // Acesso administrativo exige autenticação explícita a cada abertura do painel.
+  // Não restauramos sessão do sessionStorage: isso impedia o formulário de senha de aparecer.
   const storeSession = (next: AdminSession) => {
-    sessionStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(next));
     setSession(next);
   };
 
-  const validateSession = async (current: AdminSession) => {
-    try {
-      const data = await adminRequest("session", {}, current.access_token);
-      setMustChangePassword(data.mustChangePassword === true);
-      setSession(current);
-      setStatus("signed-in");
-      return;
-    } catch {
-      try {
-        const refreshed = await adminRequest("refresh", { refreshToken: current.refresh_token }) as unknown as AdminSession;
-        storeSession(refreshed);
-        const data = await adminRequest("session", {}, refreshed.access_token);
-        setMustChangePassword(data.mustChangePassword === true);
-        setStatus("signed-in");
-        return;
-      } catch {
-        sessionStorage.removeItem(ADMIN_SESSION_KEY);
-        setSession(null);
-        setStatus("signed-out");
-      }
-    }
-  };
-
   useEffect(() => {
-    let active = true;
-    try {
-      const raw = sessionStorage.getItem(ADMIN_SESSION_KEY);
-      if (!raw) {
-        setStatus("signed-out");
-        return;
-      }
-      const saved = JSON.parse(raw) as AdminSession;
-      void (async () => {
-        if (!active) return;
-        await validateSession(saved);
-      })();
-    } catch {
-      sessionStorage.removeItem(ADMIN_SESSION_KEY);
-      setStatus("signed-out");
-    }
-    return () => {
-      active = false;
-    };
+    sessionStorage.removeItem(ADMIN_SESSION_KEY);
+    setStatus("signed-out");
   }, []);
 
   const login = async (event: React.FormEvent<HTMLFormElement>) => {
