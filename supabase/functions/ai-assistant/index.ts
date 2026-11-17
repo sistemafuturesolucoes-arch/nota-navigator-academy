@@ -53,7 +53,7 @@ Deno.serve(async (request: Request) => {
     const tela = typeof body.tela === "string" ? body.tela.slice(0, 80) : undefined;
 
     const google = createGoogleGenerativeAI({ apiKey });
-    const model = Deno.env.get("GEMINI_MODEL") || "gemini-2.5-flash";
+    const model = Deno.env.get("GEMINI_MODEL") || "gemini-3.8-flash";
     const result = streamText({
       model: google(model),
       system: buildSystemPrompt(knowledge, tela),
