@@ -5,7 +5,63 @@ import { APICallError, convertToModelMessages, streamText, type UIMessage } from
 
 import { buildSystemPrompt } from "@/lib/ai/assistant-prompt";
 
-const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
+const DEFAULT_GEMINI_MODEL = "gemini-3.8-flash";
+/** Modelo reserva usado quando o principal está sobrecarregado ou demora demais. */
+const BACKUP_GEMINI_MODEL = "gemini-3.1-flash-lite";
+const ATTEMPT_TIMEOUT_MS = 20000;
+
+type GeminiModel = ReturnType<ReturnType<typeof createGoogleGenerativeAI>>;
+
+function isTemporary(error: unknown) {
+  if (APICallError.isInstance(error)) {
+    const code = error.statusCode ?? 0;
+    return code === 429 || code >= 500;
+  }
+  return error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
+}
+
+/** Tenta cada modelo em ordem; passa para o próximo se o anterior estiver fora do ar. */
+function withFallback(models: GeminiModel[]): GeminiModel {
+  const first = models[0]!;
+  async function attempt<T>(
+    signal: AbortSignal | undefined,
+    run: (model: GeminiModel, signal: AbortSignal) => PromiseLike<T>,
+  ): Promise<T> {
+    let lastError: unknown;
+    for (const [index, model] of models.entries()) {
+      const isLast = index === models.length - 1;
+      if (signal?.aborted) throw signal.reason;
+      const controller = new AbortController();
+      const onAbort = () => controller.abort(signal?.reason);
+      signal?.addEventListener("abort", onAbort);
+      // O último modelo não tem prazo extra: só para se o cliente cancelar.
+      const timer = isLast
+        ? undefined
+        : setTimeout(() => controller.abort(new DOMException("timeout", "TimeoutError")), ATTEMPT_TIMEOUT_MS);
+      try {
+        return await run(model, controller.signal);
+      } catch (error) {
+        signal?.removeEventListener("abort", onAbort);
+        lastError = error;
+        if (signal?.aborted || !isTemporary(error)) throw error;
+        console.warn(`Gemini ${model.modelId} indisponível, tentando o próximo modelo.`);
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    throw lastError;
+  }
+  return {
+    specificationVersion: first.specificationVersion,
+    provider: first.provider,
+    modelId: first.modelId,
+    get supportedUrls() {
+      return first.supportedUrls;
+    },
+    doGenerate: (options) => attempt(options.abortSignal, (m, abortSignal) => m.doGenerate({ ...options, abortSignal })),
+    doStream: (options) => attempt(options.abortSignal, (m, abortSignal) => m.doStream({ ...options, abortSignal })),
+  } as GeminiModel;
+}
 const DEFAULT_OPENAI_MODEL = "gpt-4o";
 
 function json(status: number, error: string) {
@@ -33,7 +89,9 @@ function pickModel() {
   const geminiKey = process.env["GEMINI_API_KEY"];
   if (geminiKey) {
     const google = createGoogleGenerativeAI({ apiKey: geminiKey });
-    return { provider: "Gemini", model: google(process.env["GEMINI_MODEL"] || DEFAULT_GEMINI_MODEL) };
+    const primary = process.env["GEMINI_MODEL"] || DEFAULT_GEMINI_MODEL;
+    const names = primary === BACKUP_GEMINI_MODEL ? [primary] : [primary, BACKUP_GEMINI_MODEL];
+    return { provider: "Gemini", model: withFallback(names.map((name) => google(name))) };
   }
   const openaiKey = process.env["OPENAI_API_KEY"];
   if (openaiKey) {
@@ -74,7 +132,7 @@ export const Route = createFileRoute("/api/chat")({
           messages: await convertToModelMessages(messages),
           providerOptions: { openai: { store: false } },
           abortSignal: request.signal,
-          maxRetries: 1,
+          maxRetries: picked.provider === "Gemini" ? 0 : 1,
         });
 
         return result.toUIMessageStreamResponse({
