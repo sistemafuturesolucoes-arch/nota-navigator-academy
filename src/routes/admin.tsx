@@ -47,7 +47,8 @@ export const Route = createFileRoute("/admin")({
 
 type Selection = { kind: "module"; id: string } | { kind: "lesson"; id: string } | null;
 
-const ADMIN_AUTH_URL = "https://itbppoailqkuxajesgys.supabase.co/functions/v1/admin-auth";
+const SUPABASE_URL = "https://itbppoailqkuxajesgys.supabase.co";
+const ADMIN_AUTH_URL = `${SUPABASE_URL}/functions/v1/admin-auth`;
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_J3-cgRigKn2QardNRaOFRQ_Jja51yof";
 const ADMIN_SESSION_KEY = "future-manual-admin-session-v1";
 
@@ -344,6 +345,31 @@ function AdminWorkspace({ accessToken }: { accessToken: string }) {
     }
   };
 
+  const recoverOriginalPrints = async () => {
+    try {
+      await saveCourseToSupabase(draft, accessToken);
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/course-media`, {
+        method: "POST",
+        headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "import-original-prints" }),
+      });
+      const result = await response.json() as { imported?: number; total?: number; results?: Array<{ file: string; ok: boolean; error?: string }> };
+      if (!response.ok && response.status !== 207) throw new Error("Não foi possível recuperar os prints originais.");
+      const refreshed = await loadCourseFromSupabase(accessToken);
+      setDraft(refreshed);
+      setDirty(false);
+      const imported = result.imported ?? 0;
+      const total = result.total ?? 10;
+      if (imported === total) toast.success(`${imported} prints originais recuperados e salvos no Supabase.`);
+      else {
+        const failures = (result.results ?? []).filter((item) => !item.ok).map((item) => `${item.file}: ${item.error}`).join("\\n");
+        toast.error(`${imported} de ${total} prints recuperados. ${failures}`);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Falha ao recuperar os prints originais.");
+    }
+  };
+
   const addModule = () => {
     const id = newId("modulo");
     update((c) => ({
@@ -422,6 +448,7 @@ function AdminWorkspace({ accessToken }: { accessToken: string }) {
         >
           <RotateCcw /> Restaurar original
         </Button>
+        <Button variant="outline" size="sm" onClick={() => void recoverOriginalPrints()}><ImageUp /> Recuperar prints originais</Button>
         <Button onClick={save} disabled={!dirty}>
           <Save /> {dirty ? "Salvar alterações" : "Tudo salvo"}
         </Button>
@@ -619,7 +646,6 @@ function LessonEditor({
   const uploadPrint = async (file: File) => {
     try {
       if (!accessToken) throw new Error("Entre novamente no painel para enviar imagens.");
-      const previousImage = l.image;
       const image = await uploadCourseImage(file, l.id, accessToken);
       patch({ image });
       toast.success("Print compactado e enviado ao armazenamento do manual.");
