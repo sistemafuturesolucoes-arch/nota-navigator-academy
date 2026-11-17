@@ -74,20 +74,18 @@ Deno.serve(async (request: Request) => {
     const action = typeof body.action === "string" ? body.action : "";
 
     if (action === "bootstrap") {
-      const configuredSecret = env("ADMIN_BOOTSTRAP_SECRET");
-      const suppliedSecret = request.headers.get("x-bootstrap-secret") ?? "";
-      if (!equalSecret(suppliedSecret, configuredSecret)) {
-        return reply(401, { error: "Credencial de configuração inválida." });
-      }
-
-      const password = typeof body.password === "string" ? body.password : "";
-      if (password.length < 6 || password.length > 128) {
-        return reply(400, { error: "A senha inicial deve ter entre 6 e 128 caracteres." });
+      // Configuração inicial de uso único. O endpoint só cria o admin se ainda não existir.
+      // A senha pública temporária é imediatamente invalidada pelo fluxo obrigatório de troca.
+      const listed = await adminRequest("users?page=1&per_page=100", "GET");
+      if (!listed.response.ok) return reply(503, { error: "Não foi possível verificar o administrador inicial." });
+      const users = Array.isArray(listed.data.users) ? listed.data.users as Array<{ app_metadata?: { role?: string } }> : [];
+      if (users.some((candidate) => candidate.app_metadata?.role === "admin")) {
+        return reply(409, { error: "O administrador inicial já foi criado. Entre com suas credenciais." });
       }
 
       const created = await adminRequest("users", "POST", {
         email: ADMIN_EMAIL,
-        password,
+        password: "123456",
         email_confirm: true,
         app_metadata: { role: "admin", must_change_password: true },
       });
@@ -99,7 +97,7 @@ Deno.serve(async (request: Request) => {
         console.error("admin bootstrap failed", created.response.status, created.data);
         return reply(500, { error: "Não foi possível criar o administrador inicial." });
       }
-      return reply(201, { ok: true, username: "admin", mustChangePassword: true });
+      return reply(201, { ok: true, username: "admin", temporaryPassword: "123456", mustChangePassword: true });
     }
 
     if (action === "login") {
