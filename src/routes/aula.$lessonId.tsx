@@ -64,18 +64,24 @@ function LessonPage() {
 
   const [mode, setMode] = useState<ScreenMode>("explore");
   const [activeId, setActiveId] = useState<string | null>(ponto ?? null);
+  const screenshots = lesson?.screenshots?.length
+    ? lesson.screenshots
+    : lesson?.image ? [{ id: `screen-${lesson.id}`, image: lesson.image, hotspots: lesson.hotspots }] : [];
+  const [activeScreenshotId, setActiveScreenshotId] = useState<string | null>(screenshots[0]?.id ?? null);
+  const activeScreenshot = screenshots.find((shot) => shot.id === activeScreenshotId) ?? screenshots[0];
   const [autoNarrate, setAutoNarrate] = useState(false);
   const { speak, stop } = useSpeech();
   const screenRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setActiveId(ponto ?? null);
+    setActiveScreenshotId(screenshots[0]?.id ?? null);
     setMode("explore");
     setAutoNarrate(false);
     stop();
   }, [lessonId, ponto, stop]);
 
-  const hotspots = lesson?.hotspots ?? [];
+  const hotspots = activeScreenshot?.hotspots ?? lesson?.hotspots ?? [];
   const activeIndex = hotspots.findIndex((h) => h.id === activeId);
 
   const goTo = useCallback(
@@ -163,8 +169,22 @@ function LessonPage() {
           </Button>
         </div>
 
-        {lesson.image ? (
+        {screenshots.length ? (
           <section className="mb-6">
+            {screenshots.length > 1 && (
+              <div className="mb-3 flex flex-wrap gap-2" aria-label="Etapas desta aula">
+                {screenshots.map((shot, index) => (
+                  <button key={shot.id} type="button" onClick={() => { setActiveScreenshotId(shot.id); setActiveId(null); setMode("explore"); setAutoNarrate(false); stop(); }}
+                    aria-pressed={activeScreenshot?.id === shot.id}
+                    className={cn("flex items-center gap-2 rounded-lg border px-2 py-1.5 text-sm transition-colors", activeScreenshot?.id === shot.id ? "border-primary bg-secondary font-semibold" : "bg-card hover:bg-muted")}>
+                    <img src={shot.image} alt="" className="size-9 rounded object-cover" />
+                    <span>{shot.caption || `Etapa ${index + 1}`}</span>
+                    <span className="text-xs text-muted-foreground">{shot.hotspots.length} itens</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {activeScreenshot?.caption && <p className="mb-2 text-sm text-muted-foreground">{activeScreenshot.caption}</p>}
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <div className="flex rounded-xl border bg-card p-1 shadow-card" role="tablist" aria-label="Modo de visualização">
                 {MODES.map((m) => (
@@ -218,7 +238,7 @@ function LessonPage() {
             <div ref={screenRef} className="bg-background fullscreen:flex fullscreen:items-center fullscreen:p-6">
               <div className="w-full">
                 <InteractiveScreen
-                  image={lesson.image}
+                  image={activeScreenshot?.image ?? lesson.image ?? ""}
                   alt={`Tela: ${lesson.title}`}
                   hotspots={hotspots}
                   mode={mode}
