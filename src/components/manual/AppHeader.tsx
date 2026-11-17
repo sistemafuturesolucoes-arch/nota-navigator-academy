@@ -60,7 +60,14 @@ export function AppHeader() {
       setPassword("");
       await navigate({ to: "/admin" });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Falha ao entrar no painel.");
+      const message = e instanceof Error ? e.message : "Falha ao entrar no painel.";
+      if (/primeiro acesso.*não configurado|administrador inicial ainda não foi criado|nenhum administrador/i.test(message)) {
+        setShowBootstrap(true);
+        setNotice("Este painel ainda não tem um administrador cadastrado. Configure o primeiro acesso para criar a conta administrativa.");
+        setError("");
+      } else {
+        setError(message);
+      }
     } finally {
       setBusy(false);
     }
