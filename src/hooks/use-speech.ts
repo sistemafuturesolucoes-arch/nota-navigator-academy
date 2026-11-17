@@ -9,6 +9,8 @@ const subscribe = (l: () => void) => {
   return () => listeners.delete(l);
 };
 
+const noopSubscribe = () => () => {};
+
 export function stripMarkdown(text: string) {
   return text
     .replace(/```[\s\S]*?```/g, " ")
@@ -34,7 +36,12 @@ export function useSpeech() {
     () => speakingId,
     () => null,
   );
-  const supported = typeof window !== "undefined" && "speechSynthesis" in window;
+  // Server snapshot is false so SSR markup matches the first client render.
+  const supported = useSyncExternalStore(
+    noopSubscribe,
+    () => "speechSynthesis" in window,
+    () => false,
+  );
 
   useEffect(() => {
     if (supported) window.speechSynthesis.getVoices();

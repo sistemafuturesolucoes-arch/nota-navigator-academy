@@ -28,3 +28,10 @@ use the editor.
   own key and store it in Secrets.
 - **Secrets.** Lovable manages them. Do not put secret values in the repo.
 <!-- LOVABLE:END -->
+
+## Project rules
+
+- Course content (modules, lessons, hotspots) is typed in `src/lib/course/types.ts`, seeded from `src/lib/course/seed.ts`, and read/written only through `src/lib/course/store.ts` — so moving storage to the external Supabase only touches the store.
+- Hotspot rectangles are stored as percentages of the screenshot (x, y, w, h 0-100) so they scale with any image size.
+- The AI assistant runs in the server route `src/routes/api/chat.ts` with the project owner's own `OPENAI_API_KEY` (and optional `OPENAI_MODEL`); the client sends the manual text as knowledge so answers stay grounded in the course.
+- Audio uses the browser's speech synthesis (`src/hooks/use-speech.ts`) so narration works without extra API cost.

@@ -17,8 +17,8 @@ type Props = {
   mode: ScreenMode;
   activeId: string | null;
   onSelect: (id: string | null) => void;
-  onNext?: () => void;
-  onPrev?: () => void;
+  onNext?: (() => void) | undefined;
+  onPrev?: (() => void) | undefined;
 };
 
 export function narrationOf(h: Hotspot) {
@@ -127,8 +127,8 @@ function HotspotCard({
   index: number;
   total: number;
   onClose: () => void;
-  onNext?: () => void;
-  onPrev?: () => void;
+  onNext?: (() => void) | undefined;
+  onPrev?: (() => void) | undefined;
 }) {
   const below = hotspot.y + hotspot.h < 58;
   const alignRight = hotspot.x + hotspot.w / 2 > 55;

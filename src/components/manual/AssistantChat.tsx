@@ -121,7 +121,6 @@ export function AssistantChat({ initialMessages, tela }: { initialMessages: UIMe
     id: CHAT_ID,
     messages: initialMessages,
     transport: new DefaultChatTransport({ api: "/api/chat" }),
-    onError: (e) => toast.error(readError(e)),
   });
 
   const busy = status === "submitted" || status === "streaming";
