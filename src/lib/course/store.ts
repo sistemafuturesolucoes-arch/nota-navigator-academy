@@ -109,7 +109,7 @@ export async function loadCourseFromSupabase(accessToken?: string): Promise<Cour
     rest("course_modules?select=id,title,description,icon,position,is_published&order=position.asc", accessToken) as Promise<DbModule[]>,
     rest("course_lessons?select=id,module_id,title,summary,path,image_url,video_url,video_path,content,hotspots,position,is_published&order=position.asc", accessToken) as Promise<DbLesson[]>,
   ]);
-  if (!modules?.length) return seedCourse;
+  if (!modules?.length) return courseStore.read();
   const course = fromDatabase(modules, lessons ?? []);
   courseStore.write(course);
   return course;
@@ -171,7 +171,9 @@ export async function saveCourseToSupabase(next: Course, accessToken: string): P
   const nextImages = new Map(lessonRows.map((row) => [row.id, row.image_url]));
   const replaced = (oldLessons ?? []).filter((row) => nextIds.has(row.id) && row.image_url && row.image_url !== nextImages.get(row.id));
   const imagePaths = [...removed, ...replaced].map((row) => storagePathFromPublicUrl(row.image_url, "course-images")).filter((path): path is string => Boolean(path));
-  const videoPaths = removed.map((row) => row.video_path).filter((path): path is string => Boolean(path));
+  const nextVideoById = new Map(lessonRows.map((row) => [row.id, row.video_path]));
+  const replacedVideos = (oldLessons ?? []).filter((row) => nextIds.has(row.id) && row.video_path && row.video_path !== nextVideoById.get(row.id));
+  const videoPaths = [...removed, ...replacedVideos].map((row) => row.video_path).filter((path): path is string => Boolean(path));
 
   for (const row of removed) {
     await rest(`course_lessons?id=eq.${encodeURIComponent(row.id)}`, accessToken, { method: "DELETE" });
