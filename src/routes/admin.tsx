@@ -809,8 +809,8 @@ function LessonEditor({
   const uploadPrints = async (files: FileList | File[]) => {
     const selectedFiles = Array.from(files);
     if (!selectedFiles.length) return;
-    if (selectedFiles.length > 8) {
-      toast.error("Envie no máximo 8 prints por aula.");
+    if (screenshots.length + selectedFiles.length > 8) {
+      toast.error("Cada aula pode ter no máximo 8 prints. Remova algum print ou selecione menos imagens.");
       return;
     }
     setUploadingPrints(true);
@@ -819,7 +819,7 @@ function LessonEditor({
       const uploaded: LessonScreenshot[] = [];
       for (const file of selectedFiles) {
         const image = await uploadCourseImage(file, l.id, accessToken);
-        uploaded.push({ id: newId("print"), image, caption: file.name.replace(/\\.[^.]+$/, ""), hotspots: [] });
+        uploaded.push({ id: newId("print"), image, caption: file.name.replace(/\.[^.]+$/, ""), hotspots: [] });
       }
       const next = [...screenshots, ...uploaded];
       patchScreenshots(next);
@@ -971,7 +971,7 @@ function LessonEditor({
           <div className="flex-1">
             <h3 className="text-lg font-bold">Print e explicações dos botões</h3>
             <p className="text-sm text-muted-foreground">
-              Clique e arraste sobre o print para marcar um botão. Arraste a área para mover e use o canto verde para redimensionar.
+              Envie até 8 prints na ordem do processo. Depois gere a aula detalhada. Você também pode ajustar as marcações verdes arrastando sobre cada botão ou campo.
             </p>
           </div>
           <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden"
