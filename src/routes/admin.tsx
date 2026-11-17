@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   ArrowDown,
   ArrowUp,
+  Database,
   Download,
   Eye,
   FilePlus2,
@@ -309,6 +310,7 @@ function AdminWorkspace({ accessToken }: { accessToken: string }) {
   const [dirty, setDirty] = useState(false);
   const [sel, setSel] = useState<Selection>(null);
   const importRef = useRef<HTMLInputElement>(null);
+  const [showErrorKnowledge, setShowErrorKnowledge] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -478,11 +480,13 @@ function AdminWorkspace({ accessToken }: { accessToken: string }) {
           <RotateCcw /> Restaurar original
         </Button>
         <Button variant="outline" size="sm" onClick={() => void recoverOriginalPrints()}><ImageUp /> Recuperar prints originais</Button>
+        <Button variant="outline" size="sm" onClick={() => setShowErrorKnowledge((value) => !value)}><Database /> {showErrorKnowledge ? "Voltar às aulas" : "Banco de erros"}</Button>
         <Button onClick={save} disabled={!dirty}>
           <Save /> {dirty ? "Salvar alterações" : "Tudo salvo"}
         </Button>
       </div>
 
+      {showErrorKnowledge ? <ErrorKnowledgeManager accessToken={accessToken} /> : <>
       <p className="mb-6 flex items-start gap-2 rounded-xl border border-primary/30 bg-secondary px-4 py-3 text-sm text-secondary-foreground">
         <Info className="mt-0.5 size-4 shrink-0" />
         Por enquanto o conteúdo fica salvo neste navegador. Quando o banco de dados for conectado, ele passa a valer para
@@ -567,7 +571,121 @@ function AdminWorkspace({ accessToken }: { accessToken: string }) {
           )}
         </section>
       </div>
+      </>}
     </main>
+  );
+}
+
+
+type ErrorKnowledgeRow = {
+  id: string;
+  error_signature: string;
+  error_message: string;
+  category: string;
+  solution: string;
+  status: "pending" | "approved" | "rejected";
+  occurrence_count: number;
+  last_seen_at: string;
+};
+
+function ErrorKnowledgeManager({ accessToken }: { accessToken: string }) {
+  const [rows, setRows] = useState<ErrorKnowledgeRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [error, setError] = useState("");
+
+  const load = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch(
+        `${SUPABASE_URL}/rest/v1/error_knowledge?select=id,error_signature,error_message,category,solution,status,occurrence_count,last_seen_at&order=last_seen_at.desc&limit=200`,
+        { headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${accessToken}` } },
+      );
+      if (!response.ok) throw new Error("Não foi possível carregar a base de erros.");
+      setRows(await response.json() as ErrorKnowledgeRow[]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Falha ao carregar os erros.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void load(); }, [accessToken]);
+
+  const patchRow = (id: string, patch: Partial<ErrorKnowledgeRow>) => {
+    setRows((current) => current.map((row) => row.id === id ? { ...row, ...patch } : row));
+  };
+
+  const save = async (row: ErrorKnowledgeRow, status: ErrorKnowledgeRow["status"]) => {
+    if (status === "approved" && !row.solution.trim()) {
+      toast.error("Revise e complete a solução antes de aprovar.");
+      return;
+    }
+    setSavingId(row.id);
+    try {
+      const response = await fetch(
+        `${SUPABASE_URL}/rest/v1/error_knowledge?id=eq.${encodeURIComponent(row.id)}`,
+        {
+          method: "PATCH",
+          headers: {
+            apikey: SUPABASE_PUBLISHABLE_KEY,
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+            Prefer: "return=minimal",
+          },
+          body: JSON.stringify({ solution: row.solution, status, updated_at: new Date().toISOString() }),
+        },
+      );
+      if (!response.ok) throw new Error((await response.text()) || "Não foi possível salvar a solução.");
+      patchRow(row.id, { status });
+      toast.success(status === "approved" ? "Solução aprovada. O assistente poderá reutilizá-la sem chamar a IA." : "Registro atualizado.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Falha ao salvar.");
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const pending = rows.filter((row) => row.status === "pending").length;
+  const approved = rows.filter((row) => row.status === "approved").length;
+
+  return (
+    <section className="space-y-5">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex-1">
+          <h2 className="text-xl font-bold">Banco de conhecimento de erros</h2>
+          <p className="text-sm text-muted-foreground">Revise as respostas criadas pela IA. Só soluções aprovadas são usadas automaticamente.</p>
+        </div>
+        <div className="rounded-lg bg-secondary px-3 py-2 text-sm"><b>{pending}</b> pendentes</div>
+        <div className="rounded-lg bg-secondary px-3 py-2 text-sm"><b>{approved}</b> aprovados</div>
+        <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}><RotateCcw /> Atualizar</Button>
+      </div>
+      {error && <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
+      {loading ? <p className="py-10 text-center text-sm text-muted-foreground">Carregando base de conhecimento...</p>
+        : rows.length === 0 ? <div className="rounded-xl border border-dashed p-10 text-center text-sm text-muted-foreground">Ainda não há erros registrados. Quando alguém enviar um print ou descrever um erro, ele aparecerá aqui para revisão.</div>
+        : <div className="space-y-4">
+          {rows.map((row) => (
+            <article key={row.id} className="space-y-3 rounded-xl border bg-card p-4 shadow-card">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-semibold">{row.category === "fiscal" ? "Erro fiscal" : "Erro do sistema"}</span>
+                <span className="rounded-full bg-secondary px-2 py-1 text-xs">{row.status === "pending" ? "Aguardando revisão" : row.status === "approved" ? "Aprovado" : "Rejeitado"}</span>
+                <span className="ml-auto text-xs text-muted-foreground">{row.occurrence_count} ocorrência(s)</span>
+              </div>
+              <p className="text-sm text-muted-foreground">Identificação: {row.error_signature}</p>
+              {row.error_message && <p className="rounded-lg bg-secondary/60 p-3 text-sm">{row.error_message}</p>}
+              <div className="space-y-1.5">
+                <Label htmlFor={`solution-${row.id}`}>Solução que o assistente poderá reutilizar</Label>
+                <Textarea id={`solution-${row.id}`} rows={5} value={row.solution} onChange={(event) => patchRow(row.id, { solution: event.target.value })} />
+              </div>
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={() => void save(row, "rejected")} disabled={savingId === row.id}>Rejeitar</Button>
+                <Button size="sm" onClick={() => void save(row, "approved")} disabled={savingId === row.id}>{savingId === row.id ? "Salvando..." : row.status === "approved" ? "Salvar solução" : "Aprovar e ativar"}</Button>
+              </div>
+            </article>
+          ))}
+        </div>}
+    </section>
   );
 }
 
