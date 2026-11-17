@@ -297,9 +297,45 @@ function AdminWorkspace({ accessToken }: { accessToken: string }) {
 
   useEffect(() => {
     let active = true;
-    void loadCourseFromSupabase(accessToken)
-      .then((course) => { if (active) setDraft(course); })
-      .catch((error) => toast.error(error instanceof Error ? error.message : "Não foi possível carregar as aulas do banco."));
+    const initializeManual = async () => {
+      try {
+        const course = await loadCourseFromSupabase(accessToken);
+        if (!active) return;
+        setDraft(course);
+
+        // Na primeira entrada, grava o conteúdo inicial e transfere os 10 prints
+        // da origem antiga para o bucket público do Supabase, que funciona na Vercel.
+        const needsPrintMigration = orderedLessons(course).some((lesson) => lesson.image?.startsWith("/__l5e/assets-v1/"));
+        if (needsPrintMigration) {
+          await saveCourseToSupabase(course, accessToken);
+          const response = await fetch(`${SUPABASE_URL}/functions/v1/course-media`, {
+            method: "POST",
+            headers: {
+              apikey: SUPABASE_PUBLISHABLE_KEY,
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ action: "import-original-prints" }),
+          });
+          const result = await response.json() as { imported?: number; total?: number; results?: Array<{ file: string; ok: boolean; error?: string }> };
+          if (!response.ok && response.status !== 207) throw new Error("Não foi possível importar os prints originais.");
+          const refreshed = await loadCourseFromSupabase(accessToken);
+          if (!active) return;
+          setDraft(refreshed);
+          setDirty(false);
+          const imported = result.imported ?? 0;
+          const total = result.total ?? 10;
+          if (imported === total) toast.success(`${imported} prints originais migrados e publicados para todos os visitantes.`);
+          else {
+            const failures = (result.results ?? []).filter((item) => !item.ok).map((item) => `${item.file}: ${item.error}`).join("\\n");
+            toast.error(`${imported} de ${total} prints migrados. ${failures}`);
+          }
+        }
+      } catch (error) {
+        if (active) toast.error(error instanceof Error ? error.message : "Não foi possível inicializar o conteúdo do manual.");
+      }
+    };
+    void initializeManual();
     return () => { active = false; };
   }, [accessToken]);
 
