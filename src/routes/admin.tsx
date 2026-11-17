@@ -10,6 +10,8 @@ import {
   Info,
   RotateCcw,
   Save,
+  ShieldCheck,
+  LogOut,
   Trash2,
   Upload,
 } from "lucide-react";
@@ -45,6 +47,218 @@ export const Route = createFileRoute("/admin")({
 
 type Selection = { kind: "module"; id: string } | { kind: "lesson"; id: string } | null;
 
+const ADMIN_AUTH_URL = "https://itbppoailqkuxajesgys.supabase.co/functions/v1/admin-auth";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_J3-cgRigKn2QardNRaOFRQ_Jja51yof";
+const ADMIN_SESSION_KEY = "future-manual-admin-session-v1";
+
+type AdminSession = {
+  access_token: string;
+  refresh_token: string;
+  expires_in?: number;
+};
+
+async function adminRequest(action: string, body: Record<string, unknown> = {}, token?: string, bootstrapSecret?: string) {
+  const response = await fetch(ADMIN_AUTH_URL, {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_PUBLISHABLE_KEY,
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(bootstrapSecret ? { "x-bootstrap-secret": bootstrapSecret } : {}),
+    },
+    body: JSON.stringify({ action, ...body }),
+  });
+  const data = await response.json().catch(() => ({})) as { error?: string; [key: string]: unknown };
+  if (!response.ok) throw new Error(data.error || "Não foi possível concluir a operação.");
+  return data;
+}
+
+function AdminPage() {
+  const [status, setStatus] = useState<"checking" | "signed-out" | "signed-in">("checking");
+  const [session, setSession] = useState<AdminSession | null>(null);
+  const [mustChangePassword, setMustChangePassword] = useState(false);
+  const [showBootstrap, setShowBootstrap] = useState(false);
+  const [username, setUsername] = useState("admin");
+  const [password, setPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [bootstrapSecret, setBootstrapSecret] = useState("");
+  const [initialPassword, setInitialPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  const storeSession = (next: AdminSession) => {
+    sessionStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(next));
+    setSession(next);
+  };
+
+  const validateSession = async (current: AdminSession) => {
+    try {
+      const data = await adminRequest("session", {}, current.access_token);
+      setMustChangePassword(data.mustChangePassword === true);
+      setSession(current);
+      setStatus("signed-in");
+      return;
+    } catch {
+      try {
+        const refreshed = await adminRequest("refresh", { refreshToken: current.refresh_token }) as unknown as AdminSession;
+        storeSession(refreshed);
+        const data = await adminRequest("session", {}, refreshed.access_token);
+        setMustChangePassword(data.mustChangePassword === true);
+        setStatus("signed-in");
+        return;
+      } catch {
+        sessionStorage.removeItem(ADMIN_SESSION_KEY);
+        setSession(null);
+        setStatus("signed-out");
+      }
+    }
+  };
+
+  useEffect(() => {
+    let active = true;
+    try {
+      const raw = sessionStorage.getItem(ADMIN_SESSION_KEY);
+      if (!raw) {
+        setStatus("signed-out");
+        return;
+      }
+      const saved = JSON.parse(raw) as AdminSession;
+      void (async () => {
+        if (!active) return;
+        await validateSession(saved);
+      })();
+    } catch {
+      sessionStorage.removeItem(ADMIN_SESSION_KEY);
+      setStatus("signed-out");
+    }
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const login = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      const data = await adminRequest("login", { username, password }) as unknown as AdminSession & { mustChangePassword?: boolean };
+      storeSession(data);
+      setMustChangePassword(data.mustChangePassword === true);
+      setStatus("signed-in");
+      setPassword("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Falha ao entrar.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const bootstrap = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await adminRequest("bootstrap", { password: initialPassword }, undefined, bootstrapSecret);
+      setNotice("Administrador inicial criado. Entre com o usuário admin e a senha informada.");
+      setShowBootstrap(false);
+      setPassword(initialPassword);
+      setInitialPassword("");
+      setBootstrapSecret("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível criar o administrador.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const changePassword = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await adminRequest("change-password", { newPassword }, session?.access_token);
+      setMustChangePassword(false);
+      setNewPassword("");
+      setNotice("Senha atualizada com sucesso.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível atualizar a senha.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const logout = () => {
+    sessionStorage.removeItem(ADMIN_SESSION_KEY);
+    setSession(null);
+    setStatus("signed-out");
+    setMustChangePassword(false);
+  };
+
+  if (status === "checking") {
+    return <main className="flex flex-1 items-center justify-center p-8 text-sm text-muted-foreground">Verificando acesso administrativo...</main>;
+  }
+
+  if (status === "signed-out") {
+    return (
+      <main className="flex flex-1 items-center justify-center px-4 py-12">
+        <section className="w-full max-w-md rounded-2xl border bg-card p-6 shadow-card">
+          <div className="mb-5 flex items-center gap-3">
+            <span className="flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary"><ShieldCheck className="size-6" /></span>
+            <div><h1 className="text-xl font-bold">Painel administrativo</h1><p className="text-sm text-muted-foreground">Acesso restrito ao administrador do manual.</p></div>
+          </div>
+          {error && <p role="alert" className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
+          {notice && <p role="status" className="mb-4 rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm">{notice}</p>}
+          {showBootstrap ? (
+            <form onSubmit={bootstrap} className="space-y-4">
+              <div><Label htmlFor="bootstrap-secret">Chave de configuração inicial</Label><Input id="bootstrap-secret" type="password" autoComplete="off" value={bootstrapSecret} onChange={(e) => setBootstrapSecret(e.target.value)} required /></div>
+              <div><Label htmlFor="initial-password">Senha temporária do administrador</Label><Input id="initial-password" type="password" autoComplete="new-password" value={initialPassword} onChange={(e) => setInitialPassword(e.target.value)} minLength={6} required /></div>
+              <Button type="submit" className="w-full" disabled={busy}>{busy ? "Configurando..." : "Criar administrador inicial"}</Button>
+              <Button type="button" variant="ghost" className="w-full" onClick={() => setShowBootstrap(false)}>Voltar ao login</Button>
+            </form>
+          ) : (
+            <form onSubmit={login} className="space-y-4">
+              <div><Label htmlFor="admin-username">Usuário</Label><Input id="admin-username" autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} required /></div>
+              <div><Label htmlFor="admin-password">Senha</Label><Input id="admin-password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></div>
+              <Button type="submit" className="w-full" disabled={busy}>{busy ? "Entrando..." : "Entrar no painel"}</Button>
+              <Button type="button" variant="ghost" className="w-full" onClick={() => { setShowBootstrap(true); setError(""); }}>Configurar primeiro acesso</Button>
+            </form>
+          )}
+        </section>
+      </main>
+    );
+  }
+
+  if (mustChangePassword) {
+    return (
+      <main className="flex flex-1 items-center justify-center px-4 py-12">
+        <section className="w-full max-w-md rounded-2xl border bg-card p-6 shadow-card">
+          <h1 className="text-xl font-bold">Troque sua senha</h1>
+          <p className="mt-2 text-sm text-muted-foreground">Por segurança, defina uma nova senha antes de acessar o painel.</p>
+          {error && <p role="alert" className="mt-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
+          <form onSubmit={changePassword} className="mt-5 space-y-4">
+            <div><Label htmlFor="new-admin-password">Nova senha</Label><Input id="new-admin-password" type="password" autoComplete="new-password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} minLength={8} required /></div>
+            <Button type="submit" className="w-full" disabled={busy}>{busy ? "Salvando..." : "Atualizar senha e continuar"}</Button>
+            <Button type="button" variant="ghost" className="w-full" onClick={logout}>Sair</Button>
+          </form>
+        </section>
+      </main>
+    );
+  }
+
+  return (
+    <>
+      <div className="mx-auto flex w-full max-w-[1500px] items-center justify-end gap-3 px-4 pt-4 lg:px-8">
+        <span className="text-xs text-muted-foreground">Administrador autenticado</span>
+        <Button type="button" variant="outline" size="sm" onClick={logout}><LogOut className="size-4" /> Sair</Button>
+      </div>
+      <AdminWorkspace />
+    </>
+  );
+}
+
+
 const move = <T,>(arr: T[], i: number, dir: -1 | 1) => {
   const j = i + dir;
   if (j < 0 || j >= arr.length) return arr;
@@ -53,7 +267,7 @@ const move = <T,>(arr: T[], i: number, dir: -1 | 1) => {
   return copy;
 };
 
-function AdminPage() {
+function AdminWorkspace() {
   const stored = useCourse();
   const [draft, setDraft] = useState<Course>(stored);
   const [dirty, setDirty] = useState(false);
