@@ -30,7 +30,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { fileToCompressedBlob } from "@/lib/course/image";
 import { loadCourseFromSupabase, newId, orderedLessons, resetCourse, saveCourseToSupabase, useCourse } from "@/lib/course/store";
 import { seedCourse } from "@/lib/course/seed";
-import type { Course, Hotspot, Lesson, Module } from "@/lib/course/types";
+import type { Course, Hotspot, Lesson, LessonScreenshot, Module } from "@/lib/course/types";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/admin")({
@@ -780,6 +780,8 @@ function LessonEditor({
   accessToken: string;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
+  const [activeScreenshotId, setActiveScreenshotId] = useState<string | null>(null);
+  const [uploadingPrints, setUploadingPrints] = useState(false);
   const [generating, setGenerating] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLInputElement>(null);
@@ -787,36 +789,79 @@ function LessonEditor({
   const posInModule = mod ? mod.lessonIds.indexOf(l.id) : -1;
 
   const patch = (p: Partial<Lesson>) => update((c) => ({ ...c, lessons: { ...c.lessons, [l.id]: { ...l, ...p } } }));
-  const patchHotspot = (id: string, p: Partial<Hotspot>) =>
-    patch({ hotspots: l.hotspots.map((h) => (h.id === id ? { ...h, ...p } : h)) });
+  const screenshots: LessonScreenshot[] = l.screenshots?.length
+    ? l.screenshots
+    : l.image ? [{ id: `screen-${l.id}`, image: l.image, hotspots: l.hotspots }] : [];
+  const activeScreenshot = screenshots.find((shot) => shot.id === activeScreenshotId) ?? screenshots[0];
+  const activeHotspots = activeScreenshot?.hotspots ?? [];
+  const patchScreenshots = (next: LessonScreenshot[]) => patch({
+    screenshots: next,
+    image: next[0]?.image,
+    hotspots: next[0]?.hotspots ?? [],
+  });
+  const patchHotspot = (id: string, p: Partial<Hotspot>) => {
+    if (!activeScreenshot) return;
+    patchScreenshots(screenshots.map((shot) => shot.id === activeScreenshot.id
+      ? { ...shot, hotspots: shot.hotspots.map((h) => h.id === id ? { ...h, ...p } : h) }
+      : shot));
+  };
 
-  const generateFromPrint = async (file: File) => {
+  const uploadPrints = async (files: FileList | File[]) => {
+    const selectedFiles = Array.from(files);
+    if (!selectedFiles.length) return;
+    if (selectedFiles.length > 8) {
+      toast.error("Envie no máximo 8 prints por aula.");
+      return;
+    }
+    setUploadingPrints(true);
+    try {
+      if (!accessToken) throw new Error("Entre novamente no painel para enviar imagens.");
+      const uploaded: LessonScreenshot[] = [];
+      for (const file of selectedFiles) {
+        const image = await uploadCourseImage(file, l.id, accessToken);
+        uploaded.push({ id: newId("print"), image, caption: file.name.replace(/\\.[^.]+$/, ""), hotspots: [] });
+      }
+      const next = [...screenshots, ...uploaded];
+      patchScreenshots(next);
+      setActiveScreenshotId(uploaded[0]?.id ?? next[0]?.id ?? null);
+      toast.success(`${uploaded.length} print(s) salvo(s) no armazenamento. Agora clique em “Gerar aula detalhada”.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não consegui enviar todos os prints.");
+    } finally {
+      setUploadingPrints(false);
+    }
+  };
+
+  const generateLesson = async () => {
+    if (!accessToken) return toast.error("Entre novamente no painel para usar a IA.");
+    if (!screenshots.length) return toast.error("Envie primeiro os prints da aula.");
     setGenerating(true);
     try {
-      if (!accessToken) throw new Error("Entre novamente no painel para usar a IA.");
-      const compressed = await fileToCompressedBlob(file);
-      const imageBase64 = await blobToBase64(compressed);
       const response = await fetch(`${SUPABASE_URL}/functions/v1/course-media`, {
         method: "POST",
-        headers: {
-          apikey: SUPABASE_PUBLISHABLE_KEY,
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ action: "generate-lesson", imageBase64, mimeType: "image/jpeg" }),
+        headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "generate-lesson", imageUrls: screenshots.map((shot) => shot.image) }),
       });
       const data = await response.json() as {
         error?: string; moduleTitle?: string; moduleDescription?: string; title?: string;
-        summary?: string; path?: string; content?: string; hotspots?: Hotspot[];
+        summary?: string; path?: string; content?: string;
+        screenshots?: Array<{ index: number; caption?: string; hotspots: Hotspot[] }>;
       };
       if (!response.ok) throw new Error(data.error || "A IA não conseguiu gerar a aula.");
+      const generatedScreens = screenshots.map((shot, index) => {
+        const generated = data.screenshots?.find((item) => item.index === index);
+        return { ...shot, caption: generated?.caption || shot.caption, hotspots: generated?.hotspots ?? [] };
+      });
       patch({
         ...(data.title ? { title: data.title } : {}),
         ...(data.summary ? { summary: data.summary } : {}),
         ...(data.path ? { path: data.path } : {}),
         ...(data.content ? { content: data.content } : {}),
-        ...(Array.isArray(data.hotspots) ? { hotspots: data.hotspots } : {}),
+        screenshots: generatedScreens,
+        image: generatedScreens[0]?.image,
+        hotspots: generatedScreens[0]?.hotspots ?? [],
       });
+      setActiveScreenshotId(generatedScreens[0]?.id ?? null);
       if (mod && data.moduleTitle && (mod.title === "Novo módulo" || !mod.description.trim())) {
         update((courseDraft) => ({
           ...courseDraft,
@@ -826,7 +871,7 @@ function LessonEditor({
             : item),
         }));
       }
-      toast.success("Aula criada pela IA. Revise os textos e os pontos marcados antes de salvar.");
+      toast.success("Aula detalhada gerada com todos os prints e marcações. Revise e clique em Salvar alterações.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não consegui gerar a aula.");
     } finally {
@@ -834,16 +879,11 @@ function LessonEditor({
     }
   };
 
-  const uploadPrint = async (file: File) => {
-    try {
-      if (!accessToken) throw new Error("Entre novamente no painel para enviar imagens.");
-      const image = await uploadCourseImage(file, l.id, accessToken);
-      patch({ image });
-      toast.success("Print enviado. Agora vou preparar a aula para você...");
-      await generateFromPrint(file);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Não consegui enviar esta imagem.");
-    }
+  const removeScreenshot = (id: string) => {
+    const next = screenshots.filter((shot) => shot.id !== id);
+    patchScreenshots(next);
+    if (activeScreenshotId === id) setActiveScreenshotId(next[0]?.id ?? null);
+    setSelected(null);
   };
 
 
@@ -864,7 +904,7 @@ function LessonEditor({
       modules: c.modules.map((m) => (m.id === mod?.id ? { ...m, lessonIds: move(m.lessonIds, posInModule, dir) } : m)),
     }));
 
-  const sel = l.hotspots.find((h) => h.id === selected);
+  const sel = activeHotspots.find((h) => h.id === selected);
 
   return (
     <div className="space-y-6">
@@ -934,120 +974,77 @@ function LessonEditor({
               Clique e arraste sobre o print para marcar um botão. Arraste a área para mover e use o canto verde para redimensionar.
             </p>
           </div>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void uploadPrint(f);
-              e.target.value = "";
-            }}
-          />
-          <Button variant="outline" onClick={() => fileRef.current?.click()} disabled={generating}>
-            {generating ? <Sparkles className="animate-pulse" /> : <ImageUp />}
-            {generating ? "Gerando aula..." : l.image ? "Trocar print e gerar aula" : "Enviar print e gerar aula"}
+          <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden"
+            onChange={(e) => { const files = e.target.files; if (files?.length) void uploadPrints(files); e.target.value = ""; }} />
+          <Button variant="outline" onClick={() => fileRef.current?.click()} disabled={uploadingPrints || generating}>
+            <ImageUp /> {uploadingPrints ? "Salvando prints..." : "Enviar vários prints"}
+          </Button>
+          <Button variant="lime" onClick={() => void generateLesson()} disabled={!screenshots.length || uploadingPrints || generating}>
+            <Sparkles className={generating ? "animate-pulse" : ""} />
+            {generating ? "Gerando aula detalhada..." : "Gerar aula detalhada"}
           </Button>
         </div>
 
-        {l.image ? (
-          <div className="grid gap-5 xl:grid-cols-[1fr_340px]">
-            <HotspotEditor
-              image={l.image}
-              hotspots={l.hotspots}
-              selectedId={selected}
-              onSelect={setSelected}
-              onChange={(id, rect) => patchHotspot(id, rect)}
-              onCreate={(rect) => {
-                const id = newId("ponto");
-                patch({ hotspots: [...l.hotspots, { id, ...rect, title: "Novo item", description: "Explique o que este botão faz." }] });
-                setSelected(id);
-              }}
-            />
-            <div className="space-y-3">
-              {sel ? (
-                <div className="space-y-3 rounded-xl border border-lime bg-background p-4">
-                  <p className="text-xs font-bold uppercase tracking-wider text-primary">
-                    Item {l.hotspots.indexOf(sel) + 1}
-                  </p>
-                  <Field label="Nome do botão/campo">
-                    <Input value={sel.title} onChange={(e) => patchHotspot(sel.id, { title: e.target.value })} />
-                  </Field>
-                  <Field label="O que ele faz">
-                    <Textarea rows={5} value={sel.description} onChange={(e) => patchHotspot(sel.id, { description: e.target.value })} />
-                  </Field>
-                  <Field label="Dica (opcional)">
-                    <Input value={sel.tip ?? ""} onChange={(e) => patchHotspot(sel.id, { tip: e.target.value || undefined })} />
-                  </Field>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        const i = l.hotspots.indexOf(sel);
-                        patch({ hotspots: move(l.hotspots, i, -1) });
-                      }}
-                    >
-                      <ArrowUp /> Antes
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        const i = l.hotspots.indexOf(sel);
-                        patch({ hotspots: move(l.hotspots, i, 1) });
-                      }}
-                    >
-                      <ArrowDown /> Depois
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="ml-auto text-destructive"
-                      onClick={() => {
-                        patch({ hotspots: l.hotspots.filter((h) => h.id !== sel.id) });
-                        setSelected(null);
-                      }}
-                    >
-                      <Trash2 /> Remover
-                    </Button>
-                  </div>
+        {screenshots.length ? (
+          <div className="space-y-4">
+            <div className="flex flex-wrap gap-2">
+              {screenshots.map((shot, index) => (
+                <div key={shot.id} className={cn("flex items-center gap-1 rounded-lg border p-1", activeScreenshot?.id === shot.id ? "border-primary bg-secondary" : "bg-card")}>
+                  <button type="button" onClick={() => { setActiveScreenshotId(shot.id); setSelected(null); }} className="flex items-center gap-2 px-2 py-1 text-left text-sm">
+                    <img src={shot.image} alt="" className="size-10 rounded object-cover" />
+                    <span className="max-w-36 truncate">{shot.caption || `Print ${index + 1}`}</span>
+                    <span className="text-xs text-muted-foreground">{shot.hotspots.length} itens</span>
+                  </button>
+                  <Button type="button" variant="ghost" size="icon-xs" aria-label="Remover print" onClick={() => removeScreenshot(shot.id)}><Trash2 /></Button>
                 </div>
-              ) : (
-                <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
-                  Selecione uma área no print para editar a explicação.
-                </p>
-              )}
-              <ol className="max-h-96 space-y-1 overflow-y-auto">
-                {l.hotspots.map((h, i) => (
-                  <li key={h.id}>
-                    <button
-                      type="button"
-                      onClick={() => setSelected(h.id)}
-                      className={cn(
-                        "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm",
-                        selected === h.id ? "bg-secondary font-semibold" : "hover:bg-muted",
-                      )}
-                    >
-                      <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-lime text-[10px] font-bold text-lime-foreground">
-                        {i + 1}
-                      </span>
-                      <span className="truncate">{h.title}</span>
-                    </button>
-                  </li>
-                ))}
-              </ol>
+              ))}
             </div>
+            {activeScreenshot && <div className="grid gap-5 xl:grid-cols-[1fr_340px]">
+              <HotspotEditor image={activeScreenshot.image} hotspots={activeHotspots} selectedId={selected}
+                onSelect={setSelected} onChange={(id, rect) => patchHotspot(id, rect)}
+                onCreate={(rect) => {
+                  const id = newId("ponto");
+                  patchScreenshots(screenshots.map((shot) => shot.id === activeScreenshot.id
+                    ? { ...shot, hotspots: [...shot.hotspots, { id, ...rect, title: "Novo item", description: "Explique o que este botão faz." }] }
+                    : shot));
+                  setSelected(id);
+                }}
+              />
+              <div className="space-y-3">
+                {sel ? (
+                  <div className="space-y-3 rounded-xl border border-lime bg-background p-4">
+                    <p className="text-xs font-bold uppercase tracking-wider text-primary">
+                      Item {activeHotspots.findIndex((h) => h.id === sel.id) + 1} · {activeScreenshot.caption || "Print selecionado"}
+                    </p>
+                    <Field label="Nome do botão/campo"><Input value={sel.title} onChange={(e) => patchHotspot(sel.id, { title: e.target.value })} /></Field>
+                    <Field label="O que ele faz"><Textarea rows={5} value={sel.description} onChange={(e) => patchHotspot(sel.id, { description: e.target.value })} /></Field>
+                    <Field label="Dica (opcional)"><Input value={sel.tip ?? ""} onChange={(e) => patchHotspot(sel.id, { tip: e.target.value || undefined })} /></Field>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => patchScreenshots(screenshots.map((shot) => shot.id === activeScreenshot.id ? { ...shot, hotspots: move(shot.hotspots, activeHotspots.indexOf(sel), -1) } : shot))}><ArrowUp /> Antes</Button>
+                      <Button variant="outline" size="sm" onClick={() => patchScreenshots(screenshots.map((shot) => shot.id === activeScreenshot.id ? { ...shot, hotspots: move(shot.hotspots, activeHotspots.indexOf(sel), 1) } : shot))}><ArrowDown /> Depois</Button>
+                      <Button variant="ghost" size="sm" className="ml-auto text-destructive" onClick={() => { patchScreenshots(screenshots.map((shot) => shot.id === activeScreenshot.id ? { ...shot, hotspots: shot.hotspots.filter((h) => h.id !== sel.id) } : shot)); setSelected(null); }}><Trash2 /> Remover</Button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">Selecione uma área no print para editar a explicação.</p>
+                )}
+                <ol className="max-h-96 space-y-1 overflow-y-auto">
+                  {activeHotspots.map((h, i) => (
+                    <li key={h.id}>
+                      <button type="button" onClick={() => setSelected(h.id)} className={cn("flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm", selected === h.id ? "bg-secondary font-semibold" : "hover:bg-muted")}>
+                        <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-lime text-[10px] font-bold text-lime-foreground">{i + 1}</span>
+                        <span className="truncate">{h.title}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            </div>}
           </div>
         ) : (
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
-            className="flex w-full flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-12 text-muted-foreground hover:border-primary hover:text-primary"
-          >
+          <button type="button" onClick={() => fileRef.current?.click()} className="flex w-full flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-12 text-muted-foreground hover:border-primary hover:text-primary">
             <ImageUp className="size-10" />
-            Clique para subir o print desta tela
+            Clique para enviar vários prints da aula
           </button>
         )}
       </div>
