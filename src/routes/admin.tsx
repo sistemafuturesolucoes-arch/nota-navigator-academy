@@ -190,6 +190,7 @@ function AdminPage() {
   };
 
   const logout = () => {
+    if (session?.access_token) void adminRequest("logout", {}, session.access_token).catch(() => undefined);
     sessionStorage.removeItem(ADMIN_SESSION_KEY);
     setSession(null);
     setStatus("signed-out");
