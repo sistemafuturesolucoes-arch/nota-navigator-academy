@@ -140,14 +140,13 @@ type AdminSession = {
   expires_in?: number;
 };
 
-async function adminRequest(action: string, body: Record<string, unknown> = {}, token?: string, bootstrapSecret?: string) {
+async function adminRequest(action: string, body: Record<string, unknown> = {}, token?: string) {
   const response = await fetch(ADMIN_AUTH_URL, {
     method: "POST",
     headers: {
       apikey: SUPABASE_PUBLISHABLE_KEY,
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(bootstrapSecret ? { "x-bootstrap-secret": bootstrapSecret } : {}),
     },
     body: JSON.stringify({ action, ...body }),
   });
@@ -164,8 +163,7 @@ function AdminPage() {
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
-  const [bootstrapSecret, setBootstrapSecret] = useState("");
-  const [initialPassword, setInitialPassword] = useState("");
+  const [showPasswordReset, setShowPasswordReset] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -208,18 +206,16 @@ function AdminPage() {
     }
   };
 
-  const bootstrap = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const bootstrap = async () => {
     setBusy(true);
     setError("");
     setNotice("");
     try {
-      await adminRequest("bootstrap", { password: initialPassword }, undefined, bootstrapSecret);
-      setNotice("Administrador inicial criado. Entre com o usuário admin e a senha informada.");
+      await adminRequest("bootstrap");
+      setNotice("Administrador criado. Entre com usuário admin e senha temporária 123456. Você deverá trocá-la no primeiro acesso.");
       setShowBootstrap(false);
-      setPassword(initialPassword);
-      setInitialPassword("");
-      setBootstrapSecret("");
+      setUsername("admin");
+      setPassword("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Não foi possível criar o administrador.");
     } finally {
@@ -234,6 +230,7 @@ function AdminPage() {
     try {
       await adminRequest("change-password", { newPassword }, session?.access_token);
       setMustChangePassword(false);
+      setShowPasswordReset(false);
       setNewPassword("");
       setNotice("Senha atualizada com sucesso.");
     } catch (e) {
@@ -262,12 +259,11 @@ function AdminPage() {
           {error && <p role="alert" className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
           {notice && <p role="status" className="mb-4 rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm">{notice}</p>}
           {showBootstrap ? (
-            <form onSubmit={bootstrap} className="space-y-4">
-              <div><Label htmlFor="bootstrap-secret">Chave de configuração inicial</Label><Input id="bootstrap-secret" type="password" autoComplete="off" value={bootstrapSecret} onChange={(e) => setBootstrapSecret(e.target.value)} required /></div>
-              <div><Label htmlFor="initial-password">Senha temporária do administrador</Label><Input id="initial-password" type="password" autoComplete="new-password" value={initialPassword} onChange={(e) => setInitialPassword(e.target.value)} minLength={6} required /></div>
-              <Button type="submit" className="w-full" disabled={busy}>{busy ? "Configurando..." : "Criar administrador inicial"}</Button>
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">O primeiro acesso cria o usuário administrador uma única vez. A senha temporária será 123456 e deverá ser alterada logo após entrar.</p>
+              <Button type="button" className="w-full" disabled={busy} onClick={() => void bootstrap()}>{busy ? "Configurando..." : "Criar administrador"}</Button>
               <Button type="button" variant="ghost" className="w-full" onClick={() => setShowBootstrap(false)}>Voltar ao login</Button>
-            </form>
+            </div>
           ) : (
             <form onSubmit={login} className="space-y-4">
               <div><Label htmlFor="admin-username">Usuário</Label><Input id="admin-username" autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} required /></div>
@@ -281,17 +277,17 @@ function AdminPage() {
     );
   }
 
-  if (mustChangePassword) {
+  if (mustChangePassword || showPasswordReset) {
     return (
       <main className="flex flex-1 items-center justify-center px-4 py-12">
         <section className="w-full max-w-md rounded-2xl border bg-card p-6 shadow-card">
-          <h1 className="text-xl font-bold">Troque sua senha</h1>
-          <p className="mt-2 text-sm text-muted-foreground">Por segurança, defina uma nova senha antes de acessar o painel.</p>
+          <h1 className="text-xl font-bold">{mustChangePassword ? "Troque sua senha" : "Redefinir senha"}</h1>
+          <p className="mt-2 text-sm text-muted-foreground">{mustChangePassword ? "Por segurança, defina uma nova senha antes de acessar o painel." : "Defina uma nova senha para sua conta de administrador."}</p>
           {error && <p role="alert" className="mt-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
           <form onSubmit={changePassword} className="mt-5 space-y-4">
             <div><Label htmlFor="new-admin-password">Nova senha</Label><Input id="new-admin-password" type="password" autoComplete="new-password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} minLength={8} required /></div>
             <Button type="submit" className="w-full" disabled={busy}>{busy ? "Salvando..." : "Atualizar senha e continuar"}</Button>
-            <Button type="button" variant="ghost" className="w-full" onClick={logout}>Sair</Button>
+            <Button type="button" variant="ghost" className="w-full" onClick={() => { if (mustChangePassword) logout(); else { setShowPasswordReset(false); setError(""); } }}>{mustChangePassword ? "Sair" : "Cancelar"}</Button>
           </form>
         </section>
       </main>
@@ -302,6 +298,7 @@ function AdminPage() {
     <>
       <div className="mx-auto flex w-full max-w-[1500px] items-center justify-end gap-3 px-4 pt-4 lg:px-8">
         <span className="text-xs text-muted-foreground">Administrador autenticado</span>
+        <Button type="button" variant="outline" size="sm" onClick={() => { setShowPasswordReset(true); setError(""); setNotice(""); }}><ShieldCheck className="size-4" /> Redefinir senha</Button>
         <Button type="button" variant="outline" size="sm" onClick={logout}><LogOut className="size-4" /> Sair</Button>
       </div>
       <AdminWorkspace accessToken={session?.access_token ?? ""} />
