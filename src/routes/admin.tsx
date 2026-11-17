@@ -157,7 +157,7 @@ async function adminRequest(action: string, body: Record<string, unknown> = {}, 
 }
 
 function AdminPage() {
-  const [status, setStatus] = useState<"checking" | "signed-out" | "signed-in">("checking");
+  const [status, setStatus] = useState<"signed-out" | "signed-in">("signed-out");
   const [session, setSession] = useState<AdminSession | null>(null);
   const [mustChangePassword, setMustChangePassword] = useState(false);
   const [showBootstrap, setShowBootstrap] = useState(false);
@@ -178,7 +178,6 @@ function AdminPage() {
 
   useEffect(() => {
     sessionStorage.removeItem(ADMIN_SESSION_KEY);
-    setStatus("signed-out");
   }, []);
 
   const login = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -240,10 +239,6 @@ function AdminPage() {
     setStatus("signed-out");
     setMustChangePassword(false);
   };
-
-  if (status === "checking") {
-    return <main className="flex flex-1 items-center justify-center p-8 text-sm text-muted-foreground">Verificando acesso administrativo...</main>;
-  }
 
   if (status === "signed-out") {
     return (
