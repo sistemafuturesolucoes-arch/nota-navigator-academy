@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 
 import { seedCourse } from "./seed";
-import type { Course, Lesson, Module } from "./types";
+import type { Course, Lesson, LessonScreenshot, Module } from "./types";
 
 const COURSE_KEY = "future-manual-course-v1";
 const PROGRESS_KEY = "future-manual-progress-v1";
@@ -64,7 +64,7 @@ type DbModule = { id: string; title: string; description: string; icon: string; 
 type DbLesson = {
   id: string; module_id: string; title: string; summary: string; path: string | null;
   image_url: string | null; video_url: string | null; video_path: string | null;
-  content: string; hotspots: Lesson["hotspots"]; position: number; is_published: boolean;
+  content: string; hotspots: Lesson["hotspots"]; screenshots?: LessonScreenshot[] | null; position: number; is_published: boolean;
 };
 
 function authHeaders(accessToken?: string) {
@@ -92,6 +92,9 @@ function fromDatabase(modules: DbModule[], rows: DbLesson[]): Course {
       path: row.path ?? undefined, image: row.image_url ?? undefined,
       video: row.video_url ?? row.video_path ?? undefined, content: row.content ?? "",
       hotspots: Array.isArray(row.hotspots) ? row.hotspots : [],
+      screenshots: Array.isArray(row.screenshots) && row.screenshots.length
+        ? row.screenshots
+        : row.image_url ? [{ id: `screen-${row.id}`, image: row.image_url, hotspots: Array.isArray(row.hotspots) ? row.hotspots : [] }] : [],
     };
   }
   return {
@@ -107,7 +110,7 @@ function fromDatabase(modules: DbModule[], rows: DbLesson[]): Course {
 export async function loadCourseFromSupabase(accessToken?: string): Promise<Course> {
   const [modules, lessons] = await Promise.all([
     rest("course_modules?select=id,title,description,icon,position,is_published&order=position.asc", accessToken) as Promise<DbModule[]>,
-    rest("course_lessons?select=id,module_id,title,summary,path,image_url,video_url,video_path,content,hotspots,position,is_published&order=position.asc", accessToken) as Promise<DbLesson[]>,
+    rest("course_lessons?select=id,module_id,title,summary,path,image_url,video_url,video_path,content,hotspots,screenshots,position,is_published&order=position.asc", accessToken) as Promise<DbLesson[]>,
   ]);
   if (!modules?.length) return courseStore.read();
   const course = fromDatabase(modules, lessons ?? []);
@@ -140,7 +143,7 @@ export async function saveCourseToSupabase(next: Course, accessToken: string): P
   if (!accessToken) throw new Error("Sessão administrativa ausente. Entre novamente.");
   const [oldModules, oldLessons] = await Promise.all([
     rest("course_modules?select=id", accessToken) as Promise<Array<{ id: string }>>,
-    rest("course_lessons?select=id,module_id,image_url,video_path", accessToken) as Promise<Array<{ id: string; module_id: string; image_url: string | null; video_path: string | null }>>,
+    rest("course_lessons?select=id,module_id,image_url,video_path,screenshots", accessToken) as Promise<Array<{ id: string; module_id: string; image_url: string | null; video_path: string | null; screenshots?: LessonScreenshot[] | null }>>,
   ]);
 
   const moduleRows: DbModule[] = next.modules.map((module, position) => ({
@@ -155,10 +158,12 @@ export async function saveCourseToSupabase(next: Course, accessToken: string): P
   const ordered = next.modules.flatMap((module) => module.lessonIds.map((id) => next.lessons[id]).filter((lesson): lesson is Lesson => Boolean(lesson)));
   const lessonRows: DbLesson[] = ordered.map((lesson, position) => ({
     id: lesson.id, module_id: lesson.moduleId, title: lesson.title, summary: lesson.summary,
-    path: lesson.path ?? null, image_url: lesson.image ?? null,
+    path: lesson.path ?? null,
+    image_url: lesson.screenshots?.[0]?.image ?? lesson.image ?? null,
+    screenshots: lesson.screenshots ?? (lesson.image ? [{ id: `screen-${lesson.id}`, image: lesson.image, hotspots: lesson.hotspots }] : []),
     video_url: lesson.video?.startsWith("http") ? lesson.video : null,
     video_path: lesson.video && !lesson.video.startsWith("http") ? lesson.video : null,
-    content: lesson.content, hotspots: lesson.hotspots, position, is_published: true,
+    content: lesson.content, hotspots: lesson.screenshots?.[0]?.hotspots ?? lesson.hotspots, position, is_published: true,
   }));
   if (lessonRows.length) {
     await rest("course_lessons?on_conflict=id", accessToken, {
@@ -168,9 +173,21 @@ export async function saveCourseToSupabase(next: Course, accessToken: string): P
 
   const nextIds = new Set(lessonRows.map((row) => row.id));
   const removed = (oldLessons ?? []).filter((row) => !nextIds.has(row.id));
-  const nextImages = new Map(lessonRows.map((row) => [row.id, row.image_url]));
-  const replaced = (oldLessons ?? []).filter((row) => nextIds.has(row.id) && row.image_url && row.image_url !== nextImages.get(row.id));
-  const imagePaths = [...removed, ...replaced].map((row) => storagePathFromPublicUrl(row.image_url, "course-images")).filter((path): path is string => Boolean(path));
+  const nextImageUrls = new Map(lessonRows.map((row) => [
+    row.id,
+    new Set([
+      row.image_url ?? "",
+      ...((row.screenshots ?? []).map((shot) => shot.image)),
+    ].filter(Boolean)),
+  ]));
+  const imagePaths = (oldLessons ?? []).flatMap((row) => {
+    const oldUrls = new Set([
+      row.image_url ?? "",
+      ...((row.screenshots ?? []).map((shot) => shot.image)),
+    ].filter(Boolean));
+    const keep = nextImageUrls.get(row.id) ?? new Set<string>();
+    return [...oldUrls].filter((url) => !keep.has(url) || !nextIds.has(row.id));
+  }).map((url) => storagePathFromPublicUrl(url, "course-images")).filter((path): path is string => Boolean(path));
   const nextVideoById = new Map(lessonRows.map((row) => [row.id, row.video_path]));
   const replacedVideos = (oldLessons ?? []).filter((row) => nextIds.has(row.id) && row.video_path && row.video_path !== nextVideoById.get(row.id));
   const videoPaths = [...removed, ...replacedVideos].map((row) => row.video_path).filter((path): path is string => Boolean(path));
