@@ -68,11 +68,13 @@ async function importOriginalPrints() {
         `${baseUrl}/rest/v1/course_lessons?id=eq.${encodeURIComponent(lessonId)}`,
         {
           method: "PATCH",
-          headers: { ...headers, "Content-Type": "application/json", Prefer: "return=minimal" },
+          headers: { ...headers, "Content-Type": "application/json", Prefer: "return=representation" },
           body: JSON.stringify({ image_url: publicUrl }),
         },
       );
       if (!updated.ok) throw new Error(`Imagem enviada, mas não foi possível atualizar a aula (HTTP ${updated.status}).`);
+      const updatedRows = await updated.json() as Array<{ id: string }>;
+      if (!updatedRows.length) throw new Error("A aula ainda não existe no banco; salve primeiro o conteúdo inicial do manual.");
       results.push({ lessonId, file: filename, ok: true });
     } catch (error) {
       results.push({ lessonId, file: filename, ok: false, error: error instanceof Error ? error.message : "Falha desconhecida." });
