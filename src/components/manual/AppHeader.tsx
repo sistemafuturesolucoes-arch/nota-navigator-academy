@@ -21,13 +21,12 @@ const navLink =
 
 type AdminSession = { access_token: string; refresh_token: string; expires_in?: number; mustChangePassword?: boolean };
 
-async function adminRequest(action: string, body: Record<string, unknown> = {}, bootstrapSecret?: string) {
+async function adminRequest(action: string, body: Record<string, unknown> = {}) {
   const response = await fetch(ADMIN_AUTH_URL, {
     method: "POST",
     headers: {
       apikey: SUPABASE_PUBLISHABLE_KEY,
       "Content-Type": "application/json",
-      ...(bootstrapSecret ? { "x-bootstrap-secret": bootstrapSecret } : {}),
     },
     body: JSON.stringify({ action, ...body }),
   });
@@ -39,20 +38,15 @@ async function adminRequest(action: string, body: Record<string, unknown> = {}, 
 export function AppHeader() {
   const navigate = useNavigate();
   const [panelOpen, setPanelOpen] = useState(false);
-  const [showBootstrap, setShowBootstrap] = useState(false);
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
-  const [bootstrapSecret, setBootstrapSecret] = useState("");
-  const [initialPassword, setInitialPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
 
   const enterPanel = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setBusy(true);
     setError("");
-    setNotice("");
     try {
       const session = await adminRequest("login", { username, password }) as AdminSession;
       sessionStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(session));
@@ -60,34 +54,7 @@ export function AppHeader() {
       setPassword("");
       await navigate({ to: "/admin" });
     } catch (e) {
-      const message = e instanceof Error ? e.message : "Falha ao entrar no painel.";
-      if (/primeiro acesso.*não configurado|administrador inicial ainda não foi criado|nenhum administrador/i.test(message)) {
-        setShowBootstrap(true);
-        setNotice("Este painel ainda não tem um administrador cadastrado. Configure o primeiro acesso para criar a conta administrativa.");
-        setError("");
-      } else {
-        setError(message);
-      }
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const configureFirstAccess = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setBusy(true);
-    setError("");
-    setNotice("");
-    try {
-      await adminRequest("bootstrap", { password: initialPassword }, bootstrapSecret);
-      const session = await adminRequest("login", { username: "admin", password: initialPassword }) as AdminSession;
-      sessionStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(session));
-      setPanelOpen(false);
-      setBootstrapSecret("");
-      setInitialPassword("");
-      await navigate({ to: "/admin" });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Não foi possível configurar o primeiro acesso.");
+      setError(e instanceof Error ? e.message : "Falha ao entrar no painel.");
     } finally {
       setBusy(false);
     }
@@ -96,7 +63,6 @@ export function AppHeader() {
   const openPanel = () => {
     setError("");
     setNotice("");
-    setShowBootstrap(false);
     setPanelOpen(true);
   };
 
@@ -147,37 +113,18 @@ export function AppHeader() {
           </DialogHeader>
 
           {error && <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
-          {notice && <p role="status" className="rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm">{notice}</p>}
 
-          {showBootstrap ? (
-            <form onSubmit={configureFirstAccess} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="panel-bootstrap-secret">Chave de configuração inicial</Label>
-                <Input id="panel-bootstrap-secret" type="password" autoComplete="off" value={bootstrapSecret} onChange={(e) => setBootstrapSecret(e.target.value)} required />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="panel-initial-password">Crie a senha do administrador</Label>
-                <Input id="panel-initial-password" type="password" autoComplete="new-password" minLength={8} value={initialPassword} onChange={(e) => setInitialPassword(e.target.value)} required />
-              </div>
-              <Button type="submit" className="w-full" disabled={busy}>{busy ? "Configurando..." : "Configurar e entrar"}</Button>
-              <Button type="button" variant="ghost" className="w-full" onClick={() => { setShowBootstrap(false); setError(""); }}>Voltar ao login</Button>
-            </form>
-          ) : (
-            <form onSubmit={enterPanel} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="panel-username">Usuário</Label>
-                <Input id="panel-username" autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} required />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="panel-password">Senha</Label>
-                <Input id="panel-password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-              </div>
-              <Button type="submit" className="w-full" disabled={busy}>{busy ? "Entrando..." : "Entrar no painel"}</Button>
-              <Button type="button" variant="ghost" className="w-full" onClick={() => { setShowBootstrap(true); setError(""); }}>
-                Configurar primeiro acesso
-              </Button>
-            </form>
-          )}
+          <form onSubmit={enterPanel} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="panel-username">Usuário</Label>
+              <Input id="panel-username" autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} required />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="panel-password">Senha</Label>
+              <Input id="panel-password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+            </div>
+            <Button type="submit" className="w-full" disabled={busy}>{busy ? "Entrando..." : "Entrar no painel"}</Button>
+          </form>
         </DialogContent>
       </Dialog>
     </>
