@@ -25,7 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { fileToCompressedDataUrl } from "@/lib/course/image";
+import { fileToCompressedBlob } from "@/lib/course/image";
 import { newId, resetCourse, saveCourse, useCourse } from "@/lib/course/store";
 import type { Course, Hotspot, Lesson, Module } from "@/lib/course/types";
 import { cn } from "@/lib/utils";
@@ -50,6 +50,44 @@ type Selection = { kind: "module"; id: string } | { kind: "lesson"; id: string }
 const ADMIN_AUTH_URL = "https://itbppoailqkuxajesgys.supabase.co/functions/v1/admin-auth";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_J3-cgRigKn2QardNRaOFRQ_Jja51yof";
 const ADMIN_SESSION_KEY = "future-manual-admin-session-v1";
+
+const COURSE_IMAGES_BUCKET = "course-images";
+
+async function uploadCourseImage(file: File, lessonId: string, accessToken: string): Promise<string> {
+  const blob = await fileToCompressedBlob(file);
+  const path = `lessons/${lessonId}/${newId("print")}.jpg`;
+  const response = await fetch(
+    `https://itbppoailqkuxajesgys.supabase.co/storage/v1/object/${COURSE_IMAGES_BUCKET}/${path}`,
+    {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_PUBLISHABLE_KEY,
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "image/jpeg",
+        "x-upsert": "false",
+      },
+      body: blob,
+    },
+  );
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(detail || "Não foi possível enviar o print ao armazenamento.");
+  }
+  return `https://itbppoailkqkuxajesgys.supabase.co/storage/v1/object/public/${COURSE_IMAGES_BUCKET}/${path}`;
+}
+
+async function removeCourseImage(publicUrl: string | undefined, accessToken: string) {
+  if (!publicUrl) return;
+  const prefix = `https://itbppoailkqkuxajesgys.supabase.co/storage/v1/object/public/${COURSE_IMAGES_BUCKET}/`;
+  if (!publicUrl.startsWith(prefix)) return;
+  const path = publicUrl.slice(prefix.length);
+  if (!path || path.includes("..")) return;
+  await fetch(`https://itbppoailkuxajesgys.supabase.co/storage/v1/object/${COURSE_IMAGES_BUCKET}/${path.split("/").map(encodeURIComponent).join("/")}`, {
+    method: "DELETE",
+    headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${accessToken}` },
+  });
+}
+
 
 type AdminSession = {
   access_token: string;
@@ -215,7 +253,7 @@ function AdminPage() {
         <span className="text-xs text-muted-foreground">Administrador autenticado</span>
         <Button type="button" variant="outline" size="sm" onClick={logout}><LogOut className="size-4" /> Sair</Button>
       </div>
-      <AdminWorkspace />
+      <AdminWorkspace accessToken={session?.access_token ?? ""} />
     </>
   );
 }
@@ -229,7 +267,7 @@ const move = <T,>(arr: T[], i: number, dir: -1 | 1) => {
   return copy;
 };
 
-function AdminWorkspace() {
+function AdminWorkspace({ accessToken }: { accessToken: string }) {
   const stored = useCourse();
   const [draft, setDraft] = useState<Course>(stored);
   const [dirty, setDirty] = useState(false);
@@ -410,7 +448,7 @@ function AdminWorkspace() {
               onDeleted={() => setSel(null)}
             />
           ) : sel?.kind === "lesson" && draft.lessons[sel.id] ? (
-            <LessonEditor key={sel.id} course={draft} lesson={draft.lessons[sel.id]!} update={update} onDeleted={() => setSel(null)} />
+            <LessonEditor key={sel.id} course={draft} lesson={draft.lessons[sel.id]!} update={update} accessToken={accessToken} onDeleted={() => setSel(null)} />
           ) : (
             <div className="flex h-full min-h-80 flex-col items-center justify-center rounded-2xl border border-dashed bg-card p-10 text-center">
               <ImageUp className="mb-3 size-10 text-primary" />
@@ -509,11 +547,13 @@ function LessonEditor({
   lesson: l,
   update,
   onDeleted,
+  accessToken,
 }: {
   course: Course;
   lesson: Lesson;
   update: Updater;
   onDeleted: () => void;
+  accessToken: string;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -526,10 +566,16 @@ function LessonEditor({
 
   const uploadPrint = async (file: File) => {
     try {
-      patch({ image: await fileToCompressedDataUrl(file) });
-      toast.success("Print carregado. Desenhe as áreas sobre os botões.");
-    } catch {
-      toast.error("Não consegui ler esta imagem.");
+      if (!accessToken) throw new Error("Entre novamente no painel para enviar imagens.");
+      const previousImage = l.image;
+      const image = await uploadCourseImage(file, l.id, accessToken);
+      patch({ image });
+      if (previousImage && previousImage !== image) {
+        void removeCourseImage(previousImage, accessToken);
+      }
+      toast.success("Print compactado e enviado ao armazenamento do manual.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não consegui enviar esta imagem.");
     }
   };
 
