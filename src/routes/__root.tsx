@@ -15,6 +15,7 @@ import { Toaster } from "@/components/ui/sonner";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { loadCourseFromSupabase } from "../lib/course/store";
 
 function NotFoundComponent() {
   return (
@@ -128,6 +129,10 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+
+  useEffect(() => {
+    void loadCourseFromSupabase().catch((error) => console.error("Não foi possível carregar o conteúdo publicado do manual:", error));
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>
