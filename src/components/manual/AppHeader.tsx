@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { Bot, GraduationCap, LayoutDashboard } from "lucide-react";
 
-import logo from "@/assets/future-logo.png.asset.json";
+const logo = "/logo-future.png";
 
 import { SearchCommand } from "./SearchCommand";
 
@@ -14,7 +14,7 @@ export function AppHeader() {
       <div className="mx-auto flex h-16 max-w-[1500px] items-center gap-4 px-4 lg:px-6">
         <Link to="/" className="flex shrink-0 items-center gap-3">
           <span className="rounded-lg bg-card px-2.5 py-1.5">
-            <img src={logo.url} alt="Future Soluções" className="h-6 w-auto" />
+            <img src={logo} alt="Future Soluções" className="h-6 w-auto" />
           </span>
           <span className="hidden font-display text-sm font-semibold leading-tight md:block">
             Manual
