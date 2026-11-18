@@ -561,6 +561,7 @@ function AdminWorkspace({ accessToken }: { accessToken: string }) {
               course={draft}
               module={draft.modules.find((m) => m.id === sel.id)!}
               update={update}
+              onSaveGenerated={saveGeneratedCourse}
               onDeleted={() => setSel(null)}
             />
           ) : sel?.kind === "lesson" && draft.lessons[sel.id] ? (
@@ -711,11 +712,13 @@ function ModuleEditor({
   module: m,
   update,
   onDeleted,
+  onSaveGenerated,
 }: {
   course: Course;
   module: Module;
   update: Updater;
   onDeleted: () => void;
+  onSaveGenerated: (course: Course) => Promise<void>;
 }) {
   const idx = course.modules.findIndex((x) => x.id === m.id);
   const patch = (p: Partial<Module>) =>
@@ -735,12 +738,16 @@ function ModuleEditor({
           size="sm"
           onClick={() => {
             if (!window.confirm(`Excluir o módulo "${m.title}" e suas ${m.lessonIds.length} aulas?`)) return;
-            update((c) => {
-              const lessons = { ...c.lessons };
-              m.lessonIds.forEach((id) => delete lessons[id]);
-              return { ...c, lessons, modules: c.modules.filter((x) => x.id !== m.id) };
-            });
+            const nextCourse: Course = {
+              ...course,
+              lessons: Object.fromEntries(Object.entries(course.lessons).filter(([id]) => !m.lessonIds.includes(id))),
+              modules: course.modules.filter((x) => x.id !== m.id),
+            };
+            update(() => nextCourse);
             onDeleted();
+            void onSaveGenerated(nextCourse)
+              .then(() => toast.success("Módulo, aulas e arquivos relacionados excluídos do banco e do armazenamento."))
+              .catch((error) => toast.error(error instanceof Error ? error.message : "O módulo foi removido da tela, mas não consegui concluir a limpeza no banco."));
           }}
         >
           <Trash2 /> Excluir
@@ -856,10 +863,20 @@ function LessonEditor({
     if (!screenshots.length) return toast.error("Envie primeiro os prints da aula.");
     setGenerating(true);
     try {
+      const images = await Promise.all(screenshots.map(async (shot, index) => {
+        const downloaded = await fetch(shot.image);
+        if (!downloaded.ok) throw new Error(`Não consegui abrir o Print ${index + 1} no navegador. Confira sua conexão e tente novamente.`);
+        const sourceBlob = await downloaded.blob();
+        const sourceFile = new File([sourceBlob], `print-${index + 1}.jpg`, { type: sourceBlob.type || "image/jpeg" });
+        const compacted = await fileToCompressedBlob(sourceFile, 1400, 0.68);
+        return { data: await blobToBase64(compacted), mimeType: "image/jpeg" };
+      }));
+      const totalBase64 = images.reduce((sum, item) => sum + item.data.length, 0);
+      if (totalBase64 > 27 * 1024 * 1024) throw new Error("Os prints ficaram grandes para enviar de uma vez. Divida o processo em duas aulas.");
       const response = await fetch(`${SUPABASE_URL}/functions/v1/course-media`, {
         method: "POST",
         headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "generate-lesson", imageUrls: screenshots.map((shot) => shot.image) }),
+        body: JSON.stringify({ action: "generate-lesson", images }),
       });
       const data = await response.json() as {
         error?: string; moduleTitle?: string; moduleDescription?: string; title?: string;
@@ -909,11 +926,24 @@ function LessonEditor({
     }
   };
 
-  const removeScreenshot = (id: string) => {
+  const removeScreenshot = async (id: string) => {
     const next = screenshots.filter((shot) => shot.id !== id);
-    patchScreenshots(next);
+    const nextLesson: Lesson = {
+      ...l,
+      screenshots: next,
+      image: next[0]?.image,
+      hotspots: next[0]?.hotspots ?? [],
+    };
+    const nextCourse: Course = { ...course, lessons: { ...course.lessons, [l.id]: nextLesson } };
+    update(() => nextCourse);
     if (activeScreenshotId === id) setActiveScreenshotId(next[0]?.id ?? null);
     setSelected(null);
+    try {
+      await onSaveGenerated(nextCourse);
+      toast.success("Print removido da aula, do banco e do armazenamento.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não consegui concluir a exclusão do print no banco.");
+    }
   };
 
 
@@ -963,16 +993,18 @@ function LessonEditor({
             size="sm"
             onClick={() => {
               if (!window.confirm(`Excluir a aula "${l.title}"?`)) return;
-              update((c) => {
-                const lessons = { ...c.lessons };
-                delete lessons[l.id];
-                return {
-                  ...c,
-                  lessons,
-                  modules: c.modules.map((m) => ({ ...m, lessonIds: m.lessonIds.filter((id) => id !== l.id) })),
-                };
-              });
+              const nextLessons = { ...course.lessons };
+              delete nextLessons[l.id];
+              const nextCourse: Course = {
+                ...course,
+                lessons: nextLessons,
+                modules: course.modules.map((m) => ({ ...m, lessonIds: m.lessonIds.filter((id) => id !== l.id) })),
+              };
+              update(() => nextCourse);
               onDeleted();
+              void onSaveGenerated(nextCourse)
+                .then(() => toast.success("Aula e arquivos relacionados excluídos do banco e do armazenamento."))
+                .catch((error) => toast.error(error instanceof Error ? error.message : "A aula foi removida da tela, mas não consegui concluir a limpeza no banco."));
             }}
           >
             <Trash2 /> Excluir
