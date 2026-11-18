@@ -131,7 +131,7 @@ async function uploadCourseImage(file: File, lessonId: string, accessToken: stri
     const detail = await response.text().catch(() => "");
     throw new Error(detail || "Não foi possível enviar o print ao armazenamento.");
   }
-  return `https://itbppoailkqkuxajesgys.supabase.co/storage/v1/object/public/${COURSE_IMAGES_BUCKET}/${path}`;
+  return `${SUPABASE_URL}/storage/v1/object/public/${COURSE_IMAGES_BUCKET}/${path}`;
 }
 
 
