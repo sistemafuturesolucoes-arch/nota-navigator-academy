@@ -111,7 +111,8 @@ async function generateLessonFromImages(images: Array<{ data: string; mimeType: 
   }
 
   const google = createGoogleGenerativeAI({ apiKey });
-  const model = Deno.env.get("GEMINI_MODEL") || "gemini-3.5-flash-lite";
+  const configuredModel = Deno.env.get("GEMINI_MODEL") || "gemini-3.5-flash-lite";
+  const modelCandidates = [...new Set([configuredModel, "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash"])];
   const prompt = `Você é um instrutor especialista no Emissor Future. Analise TODOS os prints na ordem em que aparecem.
 Crie uma aula completa em português brasileiro, natural, didática e prática. Trate as imagens como etapas sequenciais de uma única tarefa, quando fizer sentido.
 Não invente menus, botões, campos, valores ou regras fiscais. Se algo não estiver legível, sinalize no texto e não crie marcação para esse elemento.
@@ -138,22 +139,42 @@ Responda SOMENTE JSON válido, sem markdown externo, neste formato:
 }
 O array screenshots deve conter exatamente uma entrada para cada print recebido, preservando os índices de 0 a ${imageParts.length - 1}. Não retorne hotspots vazio quando houver botões, menus ou campos claramente visíveis. Se uma imagem realmente não contiver controles identificáveis, retorne hotspots vazio para ela.
 A explicação de cada marcação deve ser curta o suficiente para leitura na tela, mas completa para o aluno entender o que fazer.`;
-  const result = await generateText({
-    model: google(model),
-    messages: [{
-      role: "user",
-      content: [
-        { type: "text", text: prompt },
-        ...imageParts.map((part, index) => ({
-          type: "text" as const,
-          text: `PRINT ${index + 1} de ${imageParts.length}`,
-        })).flatMap((label, index) => [label, imageParts[index]]),
-      ],
-    }],
-    maxOutputTokens: 16000,
-    maxRetries: 1,
-  });
-
+  let result: Awaited<ReturnType<typeof generateText>> | null = null;
+  const modelErrors: string[] = [];
+  for (const candidate of modelCandidates) {
+    try {
+      result = await generateText({
+        model: google(candidate),
+        messages: [{
+          role: "user",
+          content: [
+            { type: "text", text: prompt },
+            ...imageParts.map((part, index) => ({
+              type: "text" as const,
+              text: `PRINT ${index + 1} de ${imageParts.length}`,
+            })).flatMap((label, index) => [label, imageParts[index]]),
+          ],
+        }],
+        maxOutputTokens: 16000,
+        maxRetries: 1,
+      });
+      console.log("lesson generation succeeded", { model: candidate });
+      break;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      modelErrors.push(`${candidate}: ${message.slice(0, 500)}`);
+      console.error("Gemini model failed; trying fallback", { model: candidate, error: message });
+      if (candidate !== modelCandidates[modelCandidates.length - 1]) {
+        await new Promise((resolve) => setTimeout(resolve, 700));
+      }
+    }
+  }
+  if (!result) {
+    const overloaded = modelErrors.some((message) => /high demand|overloaded|503|429|resource.exhausted|rate.?limit|temporarily unavailable/i.test(message));
+    throw new Error(overloaded
+      ? "Os modelos de IA estão temporariamente com alta demanda. O sistema tentou automaticamente outros modelos e não conseguiu concluir. Aguarde alguns minutos e tente novamente; seus prints e a aula atual não foram alterados."
+      : "Não foi possível analisar os prints com os modelos de IA disponíveis. Nenhuma alteração foi salva. Tente novamente em alguns minutos.");
+  }
   const raw = result.text.trim();
   const jsonText = raw.match(/\{[\s\S]*\}/)?.[0];
   if (!jsonText) throw new Error("A IA não conseguiu montar a aula em formato válido. Tente novamente.");
