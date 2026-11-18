@@ -830,9 +830,20 @@ function LessonEditor({
         uploaded.push({ id: newId("print"), image, caption: file.name.replace(/\.[^.]+$/, ""), hotspots: [] });
       }
       const next = [...screenshots, ...uploaded];
-      patchScreenshots(next);
+      const nextLesson: Lesson = {
+        ...l,
+        screenshots: next,
+        image: next[0]?.image,
+        hotspots: next[0]?.hotspots ?? [],
+      };
+      const nextCourse: Course = {
+        ...course,
+        lessons: { ...course.lessons, [l.id]: nextLesson },
+      };
+      update(() => nextCourse);
+      await onSaveGenerated(nextCourse);
       setActiveScreenshotId(uploaded[0]?.id ?? next[0]?.id ?? null);
-      toast.success(`${uploaded.length} print(s) salvo(s) no armazenamento. Agora clique em “Gerar aula detalhada”.`);
+      toast.success(`${uploaded.length} print(s) enviados e registrados no banco. Agora você já pode gerar a aula detalhada.`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não consegui enviar todos os prints.");
     } finally {
@@ -910,8 +921,14 @@ function LessonEditor({
     try {
       if (!accessToken) throw new Error("Entre novamente no painel para enviar vídeos.");
       const path = await uploadCourseVideo(file, l.id, accessToken);
-      patch({ video: path });
-      toast.success("Vídeo enviado ao armazenamento privado do manual. Clique em Salvar alterações.");
+      const nextLesson: Lesson = { ...l, video: path };
+      const nextCourse: Course = {
+        ...course,
+        lessons: { ...course.lessons, [l.id]: nextLesson },
+      };
+      update(() => nextCourse);
+      await onSaveGenerated(nextCourse);
+      toast.success("Vídeo enviado e registrado no banco de dados. Ele já está vinculado a esta aula.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Não consegui enviar este vídeo.");
     }
