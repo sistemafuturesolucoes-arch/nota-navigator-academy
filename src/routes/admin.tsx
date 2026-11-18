@@ -1122,8 +1122,8 @@ function LessonEditor({
                 </div>
               ))}
             </div>
-            {activeScreenshot && <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-              <div className="flex min-w-0 justify-center overflow-auto rounded-xl bg-muted/20 p-2">
+            {activeScreenshot && <div className="grid min-w-0 grid-cols-1 items-start justify-center gap-5 xl:grid-cols-[minmax(0,720px)_340px]">
+              <div className="flex min-w-0 items-start justify-center overflow-auto rounded-xl bg-muted/20 p-2">
               <HotspotEditor image={activeScreenshot.image} hotspots={activeHotspots} selectedId={selected}
                 onSelect={setSelected} onChange={(id, rect) => patchHotspot(id, rect)}
                 onCreate={(rect) => {
@@ -1136,7 +1136,7 @@ function LessonEditor({
                 }}
               />
               </div>
-              <div className="min-w-0 space-y-3">
+              <div className="min-w-0 space-y-3 xl:w-[340px]">
                 <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-secondary/50 p-2">
                   <span className="text-xs text-muted-foreground">{activeHotspots.length} marcação(ões) nesta tela</span>
                   <Button type="button" size="sm" onClick={() => void saveHotspotChanges()} disabled={savingHotspots || !hotspotsDirty}>
