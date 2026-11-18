@@ -145,7 +145,7 @@ export function HotspotEditor({
       ref={ref}
       tabIndex={0}
       aria-label="Editor de marcadores. Selecione um marcador e use as setas do teclado para movê-lo."
-      className="relative inline-block w-fit max-w-full align-top cursor-crosshair touch-none select-none overflow-hidden rounded-xl border bg-card outline-none focus-visible:ring-2 focus-visible:ring-lime"
+      className="relative inline-block w-fit max-w-full align-top cursor-crosshair touch-none select-none overflow-hidden rounded-xl bg-card ring-1 ring-border outline-none focus-visible:ring-2 focus-visible:ring-lime"
       onPointerDown={imageUnavailable ? undefined : onDown}
       onPointerMove={imageUnavailable ? undefined : onMove}
       onPointerUp={imageUnavailable ? undefined : onUp}
