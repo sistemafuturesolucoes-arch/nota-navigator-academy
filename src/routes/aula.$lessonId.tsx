@@ -276,6 +276,47 @@ function LessonPage() {
                   onNext={() => goTo(activeIndex + 1)}
                 />
               </div>
+              {isFullscreen && (
+                <>
+                  {prev && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="lg"
+                      className="absolute left-3 top-1/2 z-[10000] -translate-y-1/2 gap-2 rounded-full border-primary/30 bg-card/95 shadow-lg backdrop-blur-sm md:left-6"
+                      title={`Aula anterior: ${prev.title} · ${moduleOf(course, prev.id)?.title ?? "Módulo"}`}
+                      aria-label={`Ir para a aula anterior: ${prev.title}`}
+                      onClick={() => {
+                        stop();
+                        setAutoNarrate(false);
+                        navigate({ to: "/aula/$lessonId", params: { lessonId: prev.id }, search: {} });
+                      }}
+                    >
+                      <ArrowLeft />
+                      <span className="hidden max-w-36 truncate sm:inline">{prev.title}</span>
+                    </Button>
+                  )}
+                  {next && (
+                    <Button
+                      type="button"
+                      variant="default"
+                      size="lg"
+                      className="absolute right-3 top-1/2 z-[10000] -translate-y-1/2 gap-2 rounded-full shadow-lg md:right-6"
+                      title={`Próxima aula: ${next.title} · ${moduleOf(course, next.id)?.title ?? "Módulo"}`}
+                      aria-label={`Ir para a próxima aula: ${next.title}`}
+                      onClick={() => {
+                        stop();
+                        setAutoNarrate(false);
+                        toggleLessonDone(lesson.id, true);
+                        navigate({ to: "/aula/$lessonId", params: { lessonId: next.id }, search: {} });
+                      }}
+                    >
+                      <span className="hidden max-w-36 truncate sm:inline">{next.title}</span>
+                      <ArrowRight />
+                    </Button>
+                  )}
+                </>
+              )}
             </div>
           </section>
         ) : null}
