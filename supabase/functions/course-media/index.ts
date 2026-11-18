@@ -162,7 +162,7 @@ A explicação de cada marcação deve ser curta o suficiente para leitura na te
   const generatedScreens = Array.isArray(parsed.screenshots) ? parsed.screenshots : [];
   const screenshots = images.map((_, index) => {
     const match = generatedScreens.find((item) => item && typeof item === "object" && Number((item as Record<string, unknown>).index) === index) as Record<string, unknown> | undefined;
-    const hotspots = Array.isArray(match?.hotspots) ? match.hotspots.slice(0, 12).flatMap((item, pointIndex) => {
+    const hotspots = Array.isArray(match?.hotspots) ? match.hotspots.slice(0, 24).flatMap((item, pointIndex) => {
       if (!item || typeof item !== "object") return [];
       const h = item as Record<string, unknown>;
       const number = (key: string) => {
