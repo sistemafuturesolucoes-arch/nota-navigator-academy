@@ -262,8 +262,8 @@ function LessonPage() {
                 <Maximize2 /> Tela cheia
               </Button>
             </div>
-            <div ref={screenRef} className="bg-background fullscreen:flex fullscreen:items-center fullscreen:p-6">
-              <div className="w-full">
+            <div ref={screenRef} className="bg-background fullscreen:fixed fullscreen:inset-0 fullscreen:z-[9999] fullscreen:flex fullscreen:h-screen fullscreen:w-screen fullscreen:items-center fullscreen:justify-center fullscreen:overflow-auto fullscreen:p-6">
+              <div className={cn("w-full", isFullscreen && "flex h-full items-center justify-center")}>
                 <InteractiveScreen
                   image={activeScreenshot?.image ?? lesson.image ?? ""}
                   alt={`Tela: ${lesson.title}`}
@@ -271,6 +271,7 @@ function LessonPage() {
                   mode={mode}
                   activeId={activeId}
                   onSelect={setActiveId}
+                  fullscreen={isFullscreen}
                   onPrev={() => goTo(activeIndex - 1)}
                   onNext={() => goTo(activeIndex + 1)}
                 />
