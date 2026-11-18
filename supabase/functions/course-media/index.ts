@@ -87,49 +87,26 @@ async function importOriginalPrints() {
 }
 
 
-async function generateLessonFromImages(imageUrls: string[]) {
+async function generateLessonFromImages(images: Array<{ data: string; mimeType: string }>) {
   const apiKey = env("GEMINI_API_KEY");
-  if (!Array.isArray(imageUrls) || imageUrls.length < 1 || imageUrls.length > 8) {
-    throw new Error("Envie de 1 a 8 prints por aula.");
-  }
+  if (!Array.isArray(images) || images.length < 1 || images.length > 8) throw new Error("Envie de 1 a 8 prints por aula.");
 
-  // Use o hostname do projeto como referência. A URL de ambiente pode conter
-  // variações de barra final/porta interna, enquanto os links públicos do Storage
-  // sempre usam o domínio HTTPS canônico do projeto.
-  const configuredHost = new URL(env("SUPABASE_URL")).hostname.toLowerCase();
-  const trustedHosts = new Set([configuredHost, "itbppoailkqkuxajesgys.supabase.co"]);
+  // Os prints chegam do navegador já compactados. A Edge Function não precisa
+  // buscar os próprios arquivos no Storage, evitando falhas de resolução DNS.
   const imageParts: Array<{ type: "image"; image: Uint8Array; mimeType: string }> = [];
-  for (const imageUrl of imageUrls) {
-    let parsedUrl: URL;
-    try {
-      parsedUrl = new URL(String(imageUrl).trim());
-    } catch {
-      throw new Error("Um dos prints possui um endereço inválido. Envie novamente as imagens.");
+  let totalBytes = 0;
+  for (const item of images) {
+    if (!item || typeof item.data !== "string" || !/^[A-Za-z0-9+/]+={0,2}$/.test(item.data)) {
+      throw new Error("Um dos prints chegou em formato inválido. Envie novamente as imagens.");
     }
-    const normalizedPath = decodeURIComponent(parsedUrl.pathname);
-    const authorizedPath = normalizedPath.startsWith("/storage/v1/object/public/course-images/lessons/")
-      || normalizedPath.startsWith("/storage/v1/object/public/course-images/original/");
-    const authorizedHost = parsedUrl.protocol === "https:" && trustedHosts.has(parsedUrl.hostname.toLowerCase());
-    if (!authorizedHost || !authorizedPath || parsedUrl.username || parsedUrl.password || parsedUrl.port) {
-      console.error("Rejected course screenshot URL", {
-        host: parsedUrl.hostname,
-        protocol: parsedUrl.protocol,
-        path: normalizedPath,
-        trustedHostMatch: authorizedHost,
-        authorizedPath,
-      });
-      throw new Error("Um dos prints não pertence ao armazenamento autorizado do manual. Confira os arquivos e tente novamente.");
-    }
-    const downloaded = await fetch(parsedUrl.toString());
-    if (!downloaded.ok) throw new Error("Não consegui abrir um dos prints salvos. Envie novamente a imagem.");
-    const mimeType = (downloaded.headers.get("content-type") ?? "").split(";")[0].trim();
-    if (!["image/jpeg", "image/png", "image/webp"].includes(mimeType)) {
-      throw new Error("Um dos arquivos não é uma imagem JPG, PNG ou WEBP.");
-    }
-    const bytes = new Uint8Array(await downloaded.arrayBuffer());
-    if (!bytes.length || bytes.byteLength > 8 * 1024 * 1024) {
-      throw new Error("Um dos prints está vazio ou ultrapassa 8 MB após a compactação.");
-    }
+    const mimeType = String(item.mimeType || "").split(";")[0].trim().toLowerCase();
+    if (!["image/jpeg", "image/png", "image/webp"].includes(mimeType)) throw new Error("Um dos arquivos não é uma imagem JPG, PNG ou WEBP.");
+    const binary = atob(item.data);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    if (!bytes.length || bytes.byteLength > 8 * 1024 * 1024) throw new Error("Um dos prints está vazio ou ultrapassa 8 MB após a compactação.");
+    totalBytes += bytes.byteLength;
+    if (totalBytes > 20 * 1024 * 1024) throw new Error("O conjunto de prints ficou muito grande. Envie imagens menores ou divida em duas aulas.");
     imageParts.push({ type: "image", image: bytes, mimeType });
   }
 
@@ -183,7 +160,7 @@ A explicação de cada marcação deve ser curta o suficiente para leitura na te
   const parsed = JSON.parse(jsonText) as Record<string, unknown>;
   const clean = (value: unknown, max = 12000) => typeof value === "string" ? value.trim().slice(0, max) : "";
   const generatedScreens = Array.isArray(parsed.screenshots) ? parsed.screenshots : [];
-  const screenshots = imageUrls.map((_, index) => {
+  const screenshots = images.map((_, index) => {
     const match = generatedScreens.find((item) => item && typeof item === "object" && Number((item as Record<string, unknown>).index) === index) as Record<string, unknown> | undefined;
     const hotspots = Array.isArray(match?.hotspots) ? match.hotspots.slice(0, 12).flatMap((item, pointIndex) => {
       if (!item || typeof item !== "object") return [];
@@ -222,18 +199,18 @@ Deno.serve(async (request: Request) => {
   if (request.method !== "POST") return reply(405, { error: "Method not allowed" });
 
   try {
-    const body = await request.json() as { action?: string; lessonId?: string; imageUrls?: string[] };
+    const body = await request.json() as { action?: string; lessonId?: string; images?: Array<{ data: string; mimeType: string }> };
     const baseUrl = env("SUPABASE_URL");
     const serviceKey = env("SUPABASE_SERVICE_ROLE_KEY");
     const headers = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
 
     if (body.action === "generate-lesson") {
       if (!(await requireAdmin(request))) return reply(401, { error: "Acesso administrativo necessário." });
-      if (!Array.isArray(body.imageUrls) || body.imageUrls.length < 1 || body.imageUrls.length > 8) {
+      if (!Array.isArray(body.images) || body.images.length < 1 || body.images.length > 8) {
         return reply(400, { error: "Envie de 1 a 8 prints para gerar a aula." });
       }
       try {
-        const generated = await generateLessonFromImages(body.imageUrls);
+        const generated = await generateLessonFromImages(body.images);
         return reply(200, generated);
       } catch (error) {
         console.error("lesson generation failed", error);
