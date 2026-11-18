@@ -4,7 +4,7 @@ export async function fileToCompressedBlob(
   maxWidth = 1800,
   quality = 0.82,
 ): Promise<Blob> {
-  if (!file.type.startsWith("image/") && !/\\.svg$/i.test(file.name)) {
+  if (!file.type.startsWith("image/") && !/\.svg$/i.test(file.name)) {
     throw new Error("Selecione um arquivo de imagem.");
   }
 
