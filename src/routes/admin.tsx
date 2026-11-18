@@ -784,6 +784,10 @@ function LessonEditor({
   const [activeScreenshotId, setActiveScreenshotId] = useState<string | null>(null);
   const [uploadingPrints, setUploadingPrints] = useState(false);
   const [generating, setGenerating] = useState(false);
+  // Mantém os arquivos originais em memória enquanto o editor estiver aberto.
+  // Assim a IA recebe os bytes do próprio upload, sem depender de um fetch CORS
+  // para baixar novamente a URL pública do Storage.
+  const uploadedFilesRef = useRef<Map<string, File>>(new Map());
   const fileRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLInputElement>(null);
   const mod = course.modules.find((m) => m.lessonIds.includes(l.id));
@@ -830,7 +834,9 @@ function LessonEditor({
       const uploaded: LessonScreenshot[] = [];
       for (const file of selectedFiles) {
         const image = await uploadCourseImage(file, l.id, accessToken);
-        uploaded.push({ id: newId("print"), image, caption: file.name.replace(/\.[^.]+$/, ""), hotspots: [] });
+        const id = newId("print");
+        uploadedFilesRef.current.set(id, file);
+        uploaded.push({ id, image, caption: file.name.replace(/\.[^.]+$/, ""), hotspots: [] });
       }
       const next = [...screenshots, ...uploaded];
       const nextLesson: Lesson = {
@@ -860,10 +866,20 @@ function LessonEditor({
     setGenerating(true);
     try {
       const images = await Promise.all(screenshots.map(async (shot, index) => {
-        const response = await fetch(shot.image);
-        if (!response.ok) throw new Error("Não foi possível carregar o print " + (index + 1) + " para análise.");
-        const sourceBlob = await response.blob();
-        const sourceFile = new File([sourceBlob], "print-" + (index + 1) + ".jpg", { type: sourceBlob.type || "image/jpeg" });
+        let sourceFile = uploadedFilesRef.current.get(shot.id);
+        if (!sourceFile) {
+          // Compatibilidade para imagens já salvas antes desta correção.
+          // Se o navegador bloquear o download cross-origin, orientamos o admin
+          // a selecionar novamente o print em vez de exibir o erro genérico.
+          try {
+            const response = await fetch(shot.image, { mode: "cors", cache: "no-store" });
+            if (!response.ok) throw new Error("HTTP " + response.status);
+            const sourceBlob = await response.blob();
+            sourceFile = new File([sourceBlob], "print-" + (index + 1) + ".jpg", { type: sourceBlob.type || "image/jpeg" });
+          } catch {
+            throw new Error("Não consegui ler o print " + (index + 1) + " para análise. Remova e envie novamente essa imagem; depois clique em Gerar aula automaticamente sem sair do editor.");
+          }
+        }
         const dataUrl = await fileToCompressedDataUrl(sourceFile, 1800, 0.82);
         const comma = dataUrl.indexOf(",");
         if (comma < 0) throw new Error("Não foi possível preparar o print " + (index + 1) + ".");
