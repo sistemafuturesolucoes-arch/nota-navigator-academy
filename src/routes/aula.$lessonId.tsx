@@ -262,7 +262,7 @@ function LessonPage() {
                 <Maximize2 /> Tela cheia
               </Button>
             </div>
-            <div ref={screenRef} className="bg-background fullscreen:fixed fullscreen:inset-0 fullscreen:z-[9999] fullscreen:flex fullscreen:h-screen fullscreen:w-screen fullscreen:items-center fullscreen:justify-center fullscreen:overflow-auto fullscreen:p-6">
+            <div ref={screenRef} className={cn("bg-background", isFullscreen && "fixed inset-0 z-[9999] flex h-screen w-screen items-center justify-center overflow-auto p-6")}>
               <div className={cn("w-full", isFullscreen && "flex h-full items-center justify-center")}>
                 <InteractiveScreen
                   image={activeScreenshot?.image ?? lesson.image ?? ""}
