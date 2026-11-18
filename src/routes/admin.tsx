@@ -805,6 +805,10 @@ function LessonEditor({
       id: typeof shot.id === "string" && shot.id ? shot.id : `screen-${l.id}-${index + 1}`,
       hotspots: Array.isArray(shot.hotspots) ? shot.hotspots.filter((h) => h && typeof h.id === "string").map((h) => ({
         ...h,
+        w: Math.min(100, Math.max(1, Number.isFinite(Number(h.w)) ? Number(h.w) : 1)),
+        h: Math.min(100, Math.max(1, Number.isFinite(Number(h.h)) ? Number(h.h) : 1)),
+        x: Math.min(100 - Math.min(100, Math.max(1, Number.isFinite(Number(h.w)) ? Number(h.w) : 1)), Math.max(0, Number.isFinite(Number(h.x)) ? Number(h.x) : 0)),
+        y: Math.min(100 - Math.min(100, Math.max(1, Number.isFinite(Number(h.h)) ? Number(h.h) : 1)), Math.max(0, Number.isFinite(Number(h.y)) ? Number(h.y) : 0)),
         title: typeof h.title === "string" ? h.title : "Item sem título",
         description: typeof h.description === "string" ? h.description : "",
       })) : [],
@@ -1049,7 +1053,7 @@ function LessonEditor({
           <div className="flex-1">
             <h3 className="text-lg font-bold">Print e explicações dos botões</h3>
             <p className="text-sm text-muted-foreground">
-              Envie até 8 prints na ordem do processo. A IA analisa cada imagem, posiciona os números sobre os controles visíveis e cria as explicações. Você pode arrastar e redimensionar cada marcação e salvar os ajustes.
+              Envie até 8 prints na ordem do processo. A IA analisa cada imagem, posiciona os números sobre os controles visíveis e cria as explicações. Você pode arrastar e redimensionar cada marcação ou selecioná-la e movê-la com as setas do teclado (Shift + seta move mais rápido). Os marcadores ficam sempre dentro do print.
             </p>
           </div>
           <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg" multiple className="hidden"
