@@ -821,7 +821,20 @@ function LessonEditor({
   const mod = course.modules.find((m) => m.lessonIds.includes(l.id));
   const posInModule = mod ? mod.lessonIds.indexOf(l.id) : -1;
 
-  const patch = (p: Partial<Lesson>) => update((c) => ({ ...c, lessons: { ...c.lessons, [l.id]: { ...l, ...p } } }));
+  // Keep an immediately up-to-date course snapshot so a save right after dragging
+  // a marker cannot persist the previous React render.
+  const latestCourseRef = useRef(course);
+  latestCourseRef.current = course;
+  const patch = (p: Partial<Lesson>) => {
+    const current = latestCourseRef.current;
+    const currentLesson = current.lessons[l.id] ?? l;
+    const nextCourse: Course = {
+      ...current,
+      lessons: { ...current.lessons, [l.id]: { ...currentLesson, ...p } },
+    };
+    latestCourseRef.current = nextCourse;
+    update(() => nextCourse);
+  };
   const screenshots: LessonScreenshot[] = (Array.isArray(l.screenshots) && l.screenshots.length
     ? l.screenshots
     : l.image ? [{ id: `screen-${l.id}`, image: l.image, hotspots: l.hotspots }] : [])
@@ -855,7 +868,7 @@ function LessonEditor({
   const saveHotspotChanges = async () => {
     setSavingHotspots(true);
     try {
-      await onSaveGenerated(course);
+      await onSaveGenerated(latestCourseRef.current);
       setHotspotsDirty(false);
       toast.success("Posições e explicações dos botões salvas no banco de dados.");
     } catch (error) {
@@ -1109,7 +1122,8 @@ function LessonEditor({
                 </div>
               ))}
             </div>
-            {activeScreenshot && <div className="grid gap-5 xl:grid-cols-[1fr_340px]">
+            {activeScreenshot && <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+              <div className="flex min-w-0 justify-center overflow-auto rounded-xl bg-muted/20 p-2">
               <HotspotEditor image={activeScreenshot.image} hotspots={activeHotspots} selectedId={selected}
                 onSelect={setSelected} onChange={(id, rect) => patchHotspot(id, rect)}
                 onCreate={(rect) => {
@@ -1121,7 +1135,8 @@ function LessonEditor({
                   setSelected(id);
                 }}
               />
-              <div className="space-y-3">
+              </div>
+              <div className="min-w-0 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-secondary/50 p-2">
                   <span className="text-xs text-muted-foreground">{activeHotspots.length} marcação(ões) nesta tela</span>
                   <Button type="button" size="sm" onClick={() => void saveHotspotChanges()} disabled={savingHotspots || !hotspotsDirty}>
