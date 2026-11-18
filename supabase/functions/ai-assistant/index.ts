@@ -152,7 +152,7 @@ async function recordPendingError(fingerprint: string, signature: string, messag
     console.warn("SUPABASE_SERVICE_ROLE_KEY ausente; erro não foi armazenado na base de conhecimento.");
     return;
   }
-  const category = /nfe|nf-e|nfc|sefaz|tribut|ncm|cfop|cst|csosn/i.test(message) ? "fiscal" : "geral";
+  const category = /nfe|nf-e|nfc|sefaz|tribut|ncm|cfop|cst|csosn/i.test(`${message} ${signature}`) ? "fiscal" : "geral";
   const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/record_error_occurrence`, {
     method: "POST",
     headers: {
@@ -163,7 +163,7 @@ async function recordPendingError(fingerprint: string, signature: string, messag
     body: JSON.stringify({
       p_fingerprint: fingerprint,
       p_error_signature: signature,
-      p_error_message: sanitizeText(message),
+      p_error_message: sanitizeText(message || signature),
       p_category: category,
       p_solution: sanitizeText(solution),
     }),
@@ -228,7 +228,7 @@ Deno.serve(async (request: Request) => {
     if (fingerprintData) {
       const known = await knownSolution(fingerprintData.fingerprint);
       if (known?.solution) {
-        await recordPendingError(fingerprintData.fingerprint, fingerprintData.signature, userText, "");
+        await recordPendingError(fingerprintData.fingerprint, fingerprintData.signature, userText || fingerprintData.signature, "");
         return cachedAnswer(known.solution);
       }
     }
@@ -242,7 +242,7 @@ Deno.serve(async (request: Request) => {
       onError: ({ error }) => console.error("Gemini assistant error", error),
       onFinish: async ({ text }) => {
         if (fingerprintData) {
-          await recordPendingError(fingerprintData.fingerprint, fingerprintData.signature, userText, text);
+          await recordPendingError(fingerprintData.fingerprint, fingerprintData.signature, userText || fingerprintData.signature, text);
         }
       },
     });
