@@ -140,6 +140,7 @@ type AdminSession = {
   access_token: string;
   refresh_token: string;
   expires_in?: number;
+  expires_at?: number;
 };
 
 async function adminRequest(action: string, body: Record<string, unknown> = {}, token?: string) {
@@ -169,25 +170,47 @@ function AdminPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
-  // A sessão só é aceita quando veio do formulário de login do modal do cabeçalho.
-  // A chave é consumida imediatamente para não manter credenciais pendentes no navegador.
   const storeSession = (next: AdminSession) => {
     setSession(next);
+    localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(next));
   };
 
   useEffect(() => {
-    const raw = sessionStorage.getItem(ADMIN_SESSION_KEY);
-    sessionStorage.removeItem(ADMIN_SESSION_KEY);
-    if (!raw) return;
-    try {
-      const next = JSON.parse(raw) as AdminSession & { mustChangePassword?: boolean };
-      if (!next.access_token) return;
-      storeSession(next);
-      setMustChangePassword(next.mustChangePassword === true);
-      setStatus("signed-in");
-    } catch {
-      setStatus("signed-out");
-    }
+    let active = true;
+    const restoreSession = async () => {
+      const raw = localStorage.getItem(ADMIN_SESSION_KEY);
+      if (!raw) return;
+      try {
+        let saved = JSON.parse(raw) as AdminSession;
+        if (!saved.access_token || !saved.refresh_token) throw new Error("Sessão incompleta");
+
+        let sessionInfo: { mustChangePassword?: boolean };
+        try {
+          sessionInfo = await adminRequest("session", {}, saved.access_token) as { mustChangePassword?: boolean };
+        } catch {
+          const refreshed = await adminRequest("refresh", { refreshToken: saved.refresh_token }) as AdminSession;
+          saved = {
+            ...saved,
+            ...refreshed,
+            expires_at: Date.now() + Math.max(60, Number(refreshed.expires_in) || 3600) * 1000,
+          };
+          sessionInfo = await adminRequest("session", {}, saved.access_token) as { mustChangePassword?: boolean };
+        }
+
+        if (!active) return;
+        storeSession(saved);
+        setMustChangePassword(sessionInfo.mustChangePassword === true);
+        setStatus("signed-in");
+      } catch {
+        localStorage.removeItem(ADMIN_SESSION_KEY);
+        if (active) {
+          setSession(null);
+          setStatus("signed-out");
+        }
+      }
+    };
+    void restoreSession();
+    return () => { active = false; };
   }, []);
 
   const login = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -196,7 +219,10 @@ function AdminPage() {
     setError("");
     try {
       const data = await adminRequest("login", { username, password }) as unknown as AdminSession & { mustChangePassword?: boolean };
-      storeSession(data);
+      storeSession({
+        ...data,
+        expires_at: Date.now() + Math.max(60, Number(data.expires_in) || 3600) * 1000,
+      });
       setMustChangePassword(data.mustChangePassword === true);
       setStatus("signed-in");
       setPassword("");
@@ -226,7 +252,7 @@ function AdminPage() {
 
   const logout = () => {
     if (session?.access_token) void adminRequest("logout", {}, session.access_token).catch(() => undefined);
-    sessionStorage.removeItem(ADMIN_SESSION_KEY);
+    localStorage.removeItem(ADMIN_SESSION_KEY);
     setSession(null);
     setStatus("signed-out");
     setMustChangePassword(false);
