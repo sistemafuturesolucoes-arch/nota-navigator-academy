@@ -93,13 +93,21 @@ async function generateLessonFromImages(imageUrls: string[]) {
     throw new Error("Envie de 1 a 8 prints por aula.");
   }
 
-  const allowedPrefix = `${env("SUPABASE_URL")}/storage/v1/object/public/course-images/lessons/`;
+  const supabaseOrigin = new URL(env("SUPABASE_URL")).origin;
   const imageParts: Array<{ type: "image"; image: Uint8Array; mimeType: string }> = [];
   for (const imageUrl of imageUrls) {
-    if (typeof imageUrl !== "string" || !imageUrl.startsWith(allowedPrefix)) {
-      throw new Error("Um dos prints não pertence ao armazenamento autorizado do manual.");
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(imageUrl);
+    } catch {
+      throw new Error("Um dos prints possui um endereço inválido. Envie novamente as imagens.");
     }
-    const downloaded = await fetch(imageUrl);
+    const authorizedPath = parsedUrl.pathname.startsWith("/storage/v1/object/public/course-images/lessons/")
+      || parsedUrl.pathname.startsWith("/storage/v1/object/public/course-images/original/");
+    if (parsedUrl.origin !== supabaseOrigin || !authorizedPath || parsedUrl.username || parsedUrl.password) {
+      throw new Error("Um dos prints não pertence ao armazenamento autorizado do manual. Confira os arquivos e tente novamente.");
+    }
+    const downloaded = await fetch(parsedUrl.toString());
     if (!downloaded.ok) throw new Error("Não consegui abrir um dos prints salvos. Envie novamente a imagem.");
     const mimeType = (downloaded.headers.get("content-type") ?? "").split(";")[0].trim();
     if (!["image/jpeg", "image/png", "image/webp"].includes(mimeType)) {
