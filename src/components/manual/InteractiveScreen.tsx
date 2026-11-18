@@ -53,9 +53,9 @@ export function InteractiveScreen({
   const showMarkers = mode !== "tour";
 
   return (
-    <div ref={wrapRef} className="relative">
+    <div ref={wrapRef} className="relative inline-block w-fit max-w-full align-top">
       <div
-        className="relative overflow-hidden rounded-xl border bg-card shadow-card"
+        className="relative inline-block w-fit max-w-full overflow-hidden rounded-xl bg-card shadow-card ring-1 ring-border"
         onClick={() => mode !== "tour" && onSelect(null)}
       >
         {imageUnavailable ? (
@@ -64,7 +64,7 @@ export function InteractiveScreen({
             <p className="max-w-md text-sm text-muted-foreground">A imagem desta tela ainda não está incluída nos arquivos publicados. O conteúdo e as explicações da aula continuam disponíveis.</p>
           </div>
         ) : (
-          <img src={image} alt={alt} onError={() => setImageUnavailable(true)} className="block h-auto w-full select-none" draggable={false} />
+          <img src={image} alt={alt} onError={() => setImageUnavailable(true)} className="block h-auto w-auto max-w-full select-none" draggable={false} />
         )}
 
         {!imageUnavailable && mode === "tour" && !active && <div className="absolute inset-0 bg-[var(--spotlight-veil)]" />}
