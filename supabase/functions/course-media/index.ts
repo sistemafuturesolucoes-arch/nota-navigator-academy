@@ -117,7 +117,7 @@ Crie uma aula completa em português brasileiro, natural, didática e prática. 
 Não invente menus, botões, campos, valores ou regras fiscais. Se algo não estiver legível, sinalize no texto e não crie marcação para esse elemento.
 A aula deve explicar o objetivo, o caminho no sistema, o que fazer em cada tela, o que preencher, o que conferir e como concluir.
 Use passos numerados e títulos claros. Organize o conteúdo por print (Print 1, Print 2 etc.) para o aluno saber quando avançar.
-As marcações devem apontar para botões/campos reais visíveis em cada print. Coordenadas x, y, w, h são percentuais 0-100 da imagem correspondente. Não use áreas gigantes: marque cada controle de forma precisa. Crie no máximo 12 marcações por print.
+IMPORTANTE: faça uma inspeção visual cuidadosa de CADA print e identifique todos os controles acionáveis ou campos relevantes que estejam realmente visíveis (botões, menus, abas, ícones com função clara, caixas de seleção, campos de texto e seletores). Gere uma marcação e uma explicação individual para cada controle identificado, sem pular os principais. Não invente controles que não aparecem. Use até 24 marcações por print; se houver mais, priorize todos os controles necessários para executar a tarefa e não crie duplicatas.\nAs coordenadas x, y, w, h são percentuais de 0 a 100 relativos à imagem inteira, não à tela do navegador nem à janela. x e y indicam o canto SUPERIOR ESQUERDO do retângulo; w e h indicam sua largura e altura. O retângulo deve ficar exatamente em volta do botão/campo visível, com pequena margem (cerca de 1% a 2%), sem cobrir controles vizinhos, títulos ou áreas vazias. Confira mentalmente cada retângulo com a posição real do controle no print antes de responder. Nunca distribua os marcadores uniformemente, nunca use coordenadas genéricas e nunca coloque todos no centro. Se não conseguir localizar com segurança um controle, não crie marcação para ele. Cada hotspot precisa ter título específico e explicação prática do que o usuário deve fazer naquele controle.
 Responda SOMENTE JSON válido, sem markdown externo, neste formato:
 {
   "moduleTitle": "nome sugerido para o módulo",
@@ -136,7 +136,7 @@ Responda SOMENTE JSON válido, sem markdown externo, neste formato:
     }
   ]
 }
-O array screenshots deve conter exatamente uma entrada para cada print recebido, preservando os índices de 0 a ${imageParts.length - 1}. Se não houver controles identificáveis em uma imagem, retorne hotspots vazio para ela.
+O array screenshots deve conter exatamente uma entrada para cada print recebido, preservando os índices de 0 a ${imageParts.length - 1}. Não retorne hotspots vazio quando houver botões, menus ou campos claramente visíveis. Se uma imagem realmente não contiver controles identificáveis, retorne hotspots vazio para ela.
 A explicação de cada marcação deve ser curta o suficiente para leitura na tela, mas completa para o aluno entender o que fazer.`;
   const result = await generateText({
     model: google(model),
@@ -150,7 +150,7 @@ A explicação de cada marcação deve ser curta o suficiente para leitura na te
         })).flatMap((label, index) => [label, imageParts[index]]),
       ],
     }],
-    maxOutputTokens: 10000,
+    maxOutputTokens: 16000,
     maxRetries: 1,
   });
 
