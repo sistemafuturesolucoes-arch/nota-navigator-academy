@@ -93,18 +93,31 @@ async function generateLessonFromImages(imageUrls: string[]) {
     throw new Error("Envie de 1 a 8 prints por aula.");
   }
 
-  const supabaseOrigin = new URL(env("SUPABASE_URL")).origin;
+  // Use o hostname do projeto como referência. A URL de ambiente pode conter
+  // variações de barra final/porta interna, enquanto os links públicos do Storage
+  // sempre usam o domínio HTTPS canônico do projeto.
+  const configuredHost = new URL(env("SUPABASE_URL")).hostname.toLowerCase();
+  const trustedHosts = new Set([configuredHost, "itbppoailkqkuxajesgys.supabase.co"]);
   const imageParts: Array<{ type: "image"; image: Uint8Array; mimeType: string }> = [];
   for (const imageUrl of imageUrls) {
     let parsedUrl: URL;
     try {
-      parsedUrl = new URL(imageUrl);
+      parsedUrl = new URL(String(imageUrl).trim());
     } catch {
       throw new Error("Um dos prints possui um endereço inválido. Envie novamente as imagens.");
     }
-    const authorizedPath = parsedUrl.pathname.startsWith("/storage/v1/object/public/course-images/lessons/")
-      || parsedUrl.pathname.startsWith("/storage/v1/object/public/course-images/original/");
-    if (parsedUrl.origin !== supabaseOrigin || !authorizedPath || parsedUrl.username || parsedUrl.password) {
+    const normalizedPath = decodeURIComponent(parsedUrl.pathname);
+    const authorizedPath = normalizedPath.startsWith("/storage/v1/object/public/course-images/lessons/")
+      || normalizedPath.startsWith("/storage/v1/object/public/course-images/original/");
+    const authorizedHost = parsedUrl.protocol === "https:" && trustedHosts.has(parsedUrl.hostname.toLowerCase());
+    if (!authorizedHost || !authorizedPath || parsedUrl.username || parsedUrl.password || parsedUrl.port) {
+      console.error("Rejected course screenshot URL", {
+        host: parsedUrl.hostname,
+        protocol: parsedUrl.protocol,
+        path: normalizedPath,
+        trustedHostMatch: authorizedHost,
+        authorizedPath,
+      });
       throw new Error("Um dos prints não pertence ao armazenamento autorizado do manual. Confira os arquivos e tente novamente.");
     }
     const downloaded = await fetch(parsedUrl.toString());
