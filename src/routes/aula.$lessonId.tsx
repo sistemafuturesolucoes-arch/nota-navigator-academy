@@ -181,20 +181,30 @@ function LessonPage() {
 
         {screenshots.length ? (
           <section className="mb-6">
-            {screenshots.length > 1 && (
-              <div className="mb-3 flex flex-wrap gap-2" aria-label="Etapas desta aula">
-                {screenshots.map((shot, index) => (
-                  <button key={shot.id} type="button" onClick={() => { setActiveScreenshotId(shot.id); setActiveId(null); setMode("explore"); setAutoNarrate(false); stop(); }}
-                    aria-pressed={activeScreenshot?.id === shot.id}
-                    className={cn("flex items-center gap-2 rounded-lg border px-2 py-1.5 text-sm transition-colors", activeScreenshot?.id === shot.id ? "border-primary bg-secondary font-semibold" : "bg-card hover:bg-muted")}>
-                    <img src={shot.image} alt="" className="size-9 rounded object-cover" />
-                    <span>{shot.caption || `Etapa ${index + 1}`}</span>
-                    <span className="text-xs text-muted-foreground">{(shot.hotspots ?? []).length} itens</span>
-                  </button>
-                ))}
+            <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border bg-card p-2">
+              <Button type="button" variant="outline" size="sm"
+                disabled={screenshots.findIndex((shot) => shot.id === activeScreenshot?.id) <= 0}
+                onClick={() => {
+                  const current = screenshots.findIndex((shot) => shot.id === activeScreenshot?.id);
+                  const previous = screenshots[current - 1];
+                  if (previous) { setActiveScreenshotId(previous.id); setActiveId(null); setMode("explore"); setAutoNarrate(false); stop(); }
+                }}>
+                <ArrowLeft /> Tela anterior
+              </Button>
+              <div className="min-w-0 flex-1 text-center">
+                <p className="text-sm font-semibold">Tela {Math.max(0, screenshots.findIndex((shot) => shot.id === activeScreenshot?.id)) + 1} de {screenshots.length}</p>
+                <p className="truncate text-xs text-muted-foreground">{activeScreenshot?.caption || "Etapa da aula"}</p>
               </div>
-            )}
-            {activeScreenshot?.caption && <p className="mb-2 text-sm text-muted-foreground">{activeScreenshot.caption}</p>}
+              <Button type="button" variant="outline" size="sm"
+                disabled={screenshots.findIndex((shot) => shot.id === activeScreenshot?.id) >= screenshots.length - 1}
+                onClick={() => {
+                  const current = screenshots.findIndex((shot) => shot.id === activeScreenshot?.id);
+                  const following = screenshots[current + 1];
+                  if (following) { setActiveScreenshotId(following.id); setActiveId(null); setMode("explore"); setAutoNarrate(false); stop(); }
+                }}>
+                Próxima tela <ArrowRight />
+              </Button>
+            </div>
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <div className="flex rounded-xl border bg-card p-1 shadow-card" role="tablist" aria-label="Modo de visualização">
                 {MODES.map((m) => (
