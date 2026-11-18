@@ -150,7 +150,7 @@ export function HotspotEditor({
       ref={ref}
       tabIndex={0}
       aria-label="Editor de marcadores. Selecione um marcador e use as setas do teclado para movê-lo."
-      className="relative inline-grid w-full max-w-[720px] align-top cursor-crosshair touch-none select-none overflow-hidden rounded-xl bg-card ring-1 ring-border outline-none focus-visible:ring-2 focus-visible:ring-lime"
+      className="relative grid w-full max-w-[720px] flex-none self-start align-top cursor-crosshair touch-none select-none overflow-hidden rounded-xl bg-card ring-1 ring-border outline-none focus-visible:ring-2 focus-visible:ring-lime"
       onPointerDown={imageUnavailable ? undefined : onDown}
       onPointerMove={imageUnavailable ? undefined : onMove}
       onPointerUp={imageUnavailable ? undefined : onUp}
@@ -162,7 +162,7 @@ export function HotspotEditor({
           <p className="max-w-md text-sm text-muted-foreground">Este print ainda não está disponível no armazenamento publicado. Envie novamente a imagem original para continuar.</p>
         </div>
       ) : (
-        <img src={image} alt="" onError={() => setImageUnavailable(true)} className="pointer-events-none col-start-1 row-start-1 block h-auto w-full max-w-full" draggable={false} />
+        <img src={image} alt="" onError={() => setImageUnavailable(true)} className="pointer-events-none col-start-1 row-start-1 block h-auto w-full max-w-[720px]" draggable={false} />
       )}
       {!imageUnavailable && hotspots.map((h, i) => {
         const sel = h.id === selectedId;
