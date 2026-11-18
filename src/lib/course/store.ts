@@ -94,6 +94,22 @@ function fromDatabase(modules: DbModule[], rows: DbLesson[]): Course {
       hotspots: Array.isArray(row.hotspots) ? row.hotspots : [],
       screenshots: Array.isArray(row.screenshots) && row.screenshots.length
         ? row.screenshots
+            .filter((shot) => shot && typeof shot.image === "string" && shot.image.length > 0)
+            .map((shot, index) => ({
+              ...shot,
+              id: typeof shot.id === "string" && shot.id ? shot.id : `screen-${row.id}-${index + 1}`,
+              caption: typeof shot.caption === "string" ? shot.caption : undefined,
+              hotspots: Array.isArray(shot.hotspots) ? shot.hotspots.filter((h) => h && typeof h.id === "string").map((h) => ({
+                ...h,
+                x: Number.isFinite(Number(h.x)) ? Number(h.x) : 0,
+                y: Number.isFinite(Number(h.y)) ? Number(h.y) : 0,
+                w: Number.isFinite(Number(h.w)) ? Number(h.w) : 0,
+                h: Number.isFinite(Number(h.h)) ? Number(h.h) : 0,
+                title: typeof h.title === "string" ? h.title : "Item sem título",
+                description: typeof h.description === "string" ? h.description : "",
+                tip: typeof h.tip === "string" ? h.tip : undefined,
+              })) : [],
+            }))
         : row.image_url ? [{ id: `screen-${row.id}`, image: row.image_url, hotspots: Array.isArray(row.hotspots) ? row.hotspots : [] }] : [],
     };
   }
