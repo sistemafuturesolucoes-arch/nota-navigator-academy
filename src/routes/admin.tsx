@@ -12,7 +12,6 @@ import {
   RotateCcw,
   Save,
   ShieldCheck,
-  Sparkles,
   LogOut,
   Trash2,
   Upload,
@@ -135,20 +134,6 @@ async function uploadCourseImage(file: File, lessonId: string, accessToken: stri
 }
 
 
-
-async function blobToBase64(blob: Blob): Promise<string> {
-  return await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const value = String(reader.result ?? "");
-      const base64 = value.split(",")[1];
-      if (!base64) reject(new Error("Não foi possível preparar o print para a IA."));
-      else resolve(base64);
-    };
-    reader.onerror = () => reject(new Error("Não foi possível ler o print."));
-    reader.readAsDataURL(blob);
-  });
-}
 
 type AdminSession = {
   access_token: string;
@@ -344,7 +329,7 @@ function AdminWorkspace({ accessToken }: { accessToken: string }) {
           const total = result.total ?? 10;
           if (imported === total) toast.success(`${imported} prints originais migrados e publicados para todos os visitantes.`);
           else {
-            const failures = (result.results ?? []).filter((item) => !item.ok).map((item) => `${item.file}: ${item.error}`).join("\\n");
+            const failures = (result.results ?? []).filter((item) => !item.ok).map((item) => `${item.file}: ${item.error}`).join("\n");
             toast.error(`${imported} de ${total} prints migrados. ${failures}`);
           }
         }
@@ -398,7 +383,7 @@ function AdminWorkspace({ accessToken }: { accessToken: string }) {
       const total = result.total ?? 10;
       if (imported === total) toast.success(`${imported} prints originais recuperados e salvos no Supabase.`);
       else {
-        const failures = (result.results ?? []).filter((item) => !item.ok).map((item) => `${item.file}: ${item.error}`).join("\\n");
+        const failures = (result.results ?? []).filter((item) => !item.ok).map((item) => `${item.file}: ${item.error}`).join("\n");
         toast.error(`${imported} de ${total} prints recuperados. ${failures}`);
       }
     } catch (error) {
@@ -874,9 +859,9 @@ function LessonEditor({
         : (orderedScreens[0]?.caption || "Nova aula");
       const steps = orderedScreens.map((shot, index) => {
         const existingItems = shot.hotspots.length
-          ? `\\n\\nItens já cadastrados nesta tela: ${shot.hotspots.map((item) => item.title).join(", ")}.`
-          : "\\n\\nAbra o print no editor e marque os botões, campos ou menus importantes para adicionar explicações interativas.";
-        return `### Etapa ${index + 1} — ${shot.caption}\\n\\nConfira esta tela do Emissor Future e siga a sequência apresentada no seu processo.${existingItems}`;
+          ? `\n\nItens já cadastrados nesta tela: ${shot.hotspots.map((item) => item.title).join(", ")}.`
+          : "\n\nAbra o print no editor e marque os botões, campos ou menus importantes para adicionar explicações interativas.";
+        return `### Etapa ${index + 1} — ${shot.caption}\n\nConfira esta tela do Emissor Future e siga a sequência apresentada no seu processo.${existingItems}`;
       });
       const generatedLesson: Lesson = {
         ...l,
@@ -893,7 +878,7 @@ function LessonEditor({
           ...steps,
           "",
           "> Dica: os prints são mantidos na ordem em que foram enviados. Para explicar um botão ou campo, selecione a área correspondente no editor e preencha o nome e a função. Assim, a aula terá marcações verdes e narração sem atribuir funções incorretas aos elementos.",
-        ].join("\\n"),
+        ].join("\n"),
         screenshots: orderedScreens,
         image: orderedScreens[0]?.image,
         hotspots: orderedScreens[0]?.hotspots ?? [],
