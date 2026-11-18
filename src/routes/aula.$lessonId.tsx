@@ -80,8 +80,15 @@ function LessonPage() {
   const [activeScreenshotId, setActiveScreenshotId] = useState<string | null>(screenshots[0]?.id ?? null);
   const activeScreenshot = screenshots.find((shot) => shot.id === activeScreenshotId) ?? screenshots[0];
   const [autoNarrate, setAutoNarrate] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const { speak, stop } = useSpeech();
   const screenRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const syncFullscreen = () => setIsFullscreen(document.fullscreenElement === screenRef.current);
+    document.addEventListener("fullscreenchange", syncFullscreen);
+    return () => document.removeEventListener("fullscreenchange", syncFullscreen);
+  }, []);
 
   useEffect(() => {
     setActiveId(ponto ?? null);
