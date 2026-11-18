@@ -789,9 +789,19 @@ function LessonEditor({
   const posInModule = mod ? mod.lessonIds.indexOf(l.id) : -1;
 
   const patch = (p: Partial<Lesson>) => update((c) => ({ ...c, lessons: { ...c.lessons, [l.id]: { ...l, ...p } } }));
-  const screenshots: LessonScreenshot[] = l.screenshots?.length
+  const screenshots: LessonScreenshot[] = (Array.isArray(l.screenshots) && l.screenshots.length
     ? l.screenshots
-    : l.image ? [{ id: `screen-${l.id}`, image: l.image, hotspots: l.hotspots }] : [];
+    : l.image ? [{ id: `screen-${l.id}`, image: l.image, hotspots: l.hotspots }] : [])
+    .filter((shot) => shot && typeof shot.image === "string" && shot.image.length > 0)
+    .map((shot, index) => ({
+      ...shot,
+      id: typeof shot.id === "string" && shot.id ? shot.id : `screen-${l.id}-${index + 1}`,
+      hotspots: Array.isArray(shot.hotspots) ? shot.hotspots.filter((h) => h && typeof h.id === "string").map((h) => ({
+        ...h,
+        title: typeof h.title === "string" ? h.title : "Item sem título",
+        description: typeof h.description === "string" ? h.description : "",
+      })) : [],
+    }));
   const activeScreenshot = screenshots.find((shot) => shot.id === activeScreenshotId) ?? screenshots[0];
   const activeHotspots = activeScreenshot?.hotspots ?? [];
   const patchScreenshots = (next: LessonScreenshot[]) => patch({
@@ -802,7 +812,7 @@ function LessonEditor({
   const patchHotspot = (id: string, p: Partial<Hotspot>) => {
     if (!activeScreenshot) return;
     patchScreenshots(screenshots.map((shot) => shot.id === activeScreenshot.id
-      ? { ...shot, hotspots: shot.hotspots.map((h) => h.id === id ? { ...h, ...p } : h) }
+      ? { ...shot, hotspots: (shot.hotspots ?? []).map((h) => h.id === id ? { ...h, ...p } : h) }
       : shot));
   };
 
@@ -1033,7 +1043,7 @@ function LessonEditor({
                   <button type="button" onClick={() => { setActiveScreenshotId(shot.id); setSelected(null); }} className="flex items-center gap-2 px-2 py-1 text-left text-sm">
                     <img src={shot.image} alt="" className="size-10 rounded object-cover" />
                     <span className="max-w-36 truncate">{shot.caption || `Print ${index + 1}`}</span>
-                    <span className="text-xs text-muted-foreground">{shot.hotspots.length} itens</span>
+                    <span className="text-xs text-muted-foreground">{(shot.hotspots ?? []).length} itens</span>
                   </button>
                   <Button type="button" variant="ghost" size="icon-xs" aria-label="Mover print para cima" disabled={index === 0} onClick={() => patchScreenshots(move(screenshots, index, -1))}><ArrowUp /></Button>
                   <Button type="button" variant="ghost" size="icon-xs" aria-label="Mover print para baixo" disabled={index === screenshots.length - 1} onClick={() => patchScreenshots(move(screenshots, index, 1))}><ArrowDown /></Button>
@@ -1047,7 +1057,7 @@ function LessonEditor({
                 onCreate={(rect) => {
                   const id = newId("ponto");
                   patchScreenshots(screenshots.map((shot) => shot.id === activeScreenshot.id
-                    ? { ...shot, hotspots: [...shot.hotspots, { id, ...rect, title: "Novo item", description: "Explique o que este botão faz." }] }
+                    ? { ...shot, hotspots: [...(shot.hotspots ?? []), { id, ...rect, title: "Novo item", description: "Explique o que este botão faz." }] }
                     : shot));
                   setSelected(id);
                 }}
@@ -1062,9 +1072,9 @@ function LessonEditor({
                     <Field label="O que ele faz"><Textarea rows={5} value={sel.description} onChange={(e) => patchHotspot(sel.id, { description: e.target.value })} /></Field>
                     <Field label="Dica (opcional)"><Input value={sel.tip ?? ""} onChange={(e) => patchHotspot(sel.id, { tip: e.target.value || undefined })} /></Field>
                     <div className="flex gap-2">
-                      <Button variant="outline" size="sm" onClick={() => patchScreenshots(screenshots.map((shot) => shot.id === activeScreenshot.id ? { ...shot, hotspots: move(shot.hotspots, activeHotspots.indexOf(sel), -1) } : shot))}><ArrowUp /> Antes</Button>
-                      <Button variant="outline" size="sm" onClick={() => patchScreenshots(screenshots.map((shot) => shot.id === activeScreenshot.id ? { ...shot, hotspots: move(shot.hotspots, activeHotspots.indexOf(sel), 1) } : shot))}><ArrowDown /> Depois</Button>
-                      <Button variant="ghost" size="sm" className="ml-auto text-destructive" onClick={() => { patchScreenshots(screenshots.map((shot) => shot.id === activeScreenshot.id ? { ...shot, hotspots: shot.hotspots.filter((h) => h.id !== sel.id) } : shot)); setSelected(null); }}><Trash2 /> Remover</Button>
+                      <Button variant="outline" size="sm" onClick={() => patchScreenshots(screenshots.map((shot) => shot.id === activeScreenshot.id ? { ...shot, hotspots: move(shot.hotspots ?? [], activeHotspots.indexOf(sel), -1) } : shot))}><ArrowUp /> Antes</Button>
+                      <Button variant="outline" size="sm" onClick={() => patchScreenshots(screenshots.map((shot) => shot.id === activeScreenshot.id ? { ...shot, hotspots: move(shot.hotspots ?? [], activeHotspots.indexOf(sel), 1) } : shot))}><ArrowDown /> Depois</Button>
+                      <Button variant="ghost" size="sm" className="ml-auto text-destructive" onClick={() => { patchScreenshots(screenshots.map((shot) => shot.id === activeScreenshot.id ? { ...shot, hotspots: (shot.hotspots ?? []).filter((h) => h.id !== sel.id) } : shot)); setSelected(null); }}><Trash2 /> Remover</Button>
                     </div>
                   </div>
                 ) : (
