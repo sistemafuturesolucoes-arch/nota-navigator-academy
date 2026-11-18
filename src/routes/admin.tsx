@@ -784,6 +784,8 @@ function LessonEditor({
   const [activeScreenshotId, setActiveScreenshotId] = useState<string | null>(null);
   const [uploadingPrints, setUploadingPrints] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [hotspotsDirty, setHotspotsDirty] = useState(false);
+  const [savingHotspots, setSavingHotspots] = useState(false);
   // Mantém os arquivos originais em memória enquanto o editor estiver aberto.
   // Assim a IA recebe os bytes do próprio upload, sem depender de um fetch CORS
   // para baixar novamente a URL pública do Storage.
@@ -809,16 +811,28 @@ function LessonEditor({
     }));
   const activeScreenshot = screenshots.find((shot) => shot.id === activeScreenshotId) ?? screenshots[0];
   const activeHotspots = activeScreenshot?.hotspots ?? [];
-  const patchScreenshots = (next: LessonScreenshot[]) => patch({
-    screenshots: next,
-    image: next[0]?.image,
-    hotspots: next[0]?.hotspots ?? [],
-  });
+  const patchScreenshots = (next: LessonScreenshot[]) => {
+    patch({ screenshots: next, image: next[0]?.image, hotspots: next[0]?.hotspots ?? [] });
+    setHotspotsDirty(true);
+  };
   const patchHotspot = (id: string, p: Partial<Hotspot>) => {
     if (!activeScreenshot) return;
     patchScreenshots(screenshots.map((shot) => shot.id === activeScreenshot.id
       ? { ...shot, hotspots: (shot.hotspots ?? []).map((h) => h.id === id ? { ...h, ...p } : h) }
       : shot));
+  };
+
+  const saveHotspotChanges = async () => {
+    setSavingHotspots(true);
+    try {
+      await onSaveGenerated(course);
+      setHotspotsDirty(false);
+      toast.success("Posições e explicações dos botões salvas no banco de dados.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível salvar as posições.");
+    } finally {
+      setSavingHotspots(false);
+    }
   };
 
   const uploadPrints = async (files: FileList | File[]) => {
@@ -894,9 +908,11 @@ function LessonEditor({
       if (!response.ok) throw new Error(generated.error || "A IA não conseguiu analisar os prints. Tente novamente.");
       const generatedScreens = Array.isArray(generated.screenshots) ? generated.screenshots : [];
       if (generatedScreens.length !== screenshots.length) throw new Error("A IA não retornou uma análise para todos os prints. Nenhuma alteração foi salva; tente novamente.");
+      const generatedHotspotCount = generatedScreens.reduce((total, screen) => total + (Array.isArray(screen.hotspots) ? screen.hotspots.length : 0), 0);
+      if (generatedHotspotCount === 0) throw new Error("A IA não identificou nenhum botão ou campo nos prints. Nenhuma alteração foi salva; tente novamente com imagens mais nítidas.");
       const orderedScreens: LessonScreenshot[] = screenshots.map((shot, index) => {
         const analyzed = generatedScreens.find((item) => item.index === index);
-        const hotspots: Hotspot[] = Array.isArray(analyzed?.hotspots) ? analyzed.hotspots.map((point, pointIndex) => ({
+        const hotspots: Hotspot[] = Array.isArray(analyzed?.hotspots) && analyzed.hotspots.length > 0 ? analyzed.hotspots.map((point, pointIndex) => ({
           id: newId("ponto-" + (index + 1) + "-" + (pointIndex + 1)),
           x: point.x, y: point.y, w: point.w, h: point.h, title: point.title, description: point.description, tip: point.tip || undefined,
         })) : (shot.hotspots ?? []);
@@ -910,6 +926,7 @@ function LessonEditor({
       const nextCourse: Course = { ...course, lessons: { ...course.lessons, [l.id]: generatedLesson } };
       await onSaveGenerated(nextCourse);
       update(() => nextCourse);
+      setHotspotsDirty(false);
       setActiveScreenshotId(orderedScreens[0]?.id ?? null);
       setSelected(null);
       toast.success("Aula analisada pela IA: imagens, etapas, marcações numeradas e explicações foram salvas.");
@@ -1032,7 +1049,7 @@ function LessonEditor({
           <div className="flex-1">
             <h3 className="text-lg font-bold">Print e explicações dos botões</h3>
             <p className="text-sm text-muted-foreground">
-              Envie até 8 prints na ordem do processo. A aula é montada automaticamente, sem depender de IA. Depois marque os botões e campos para criar as explicações interativas.
+              Envie até 8 prints na ordem do processo. A IA analisa cada imagem, posiciona os números sobre os controles visíveis e cria as explicações. Você pode arrastar e redimensionar cada marcação e salvar os ajustes.
             </p>
           </div>
           <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg" multiple className="hidden"
@@ -1070,10 +1087,17 @@ function LessonEditor({
                   patchScreenshots(screenshots.map((shot) => shot.id === activeScreenshot.id
                     ? { ...shot, hotspots: [...(shot.hotspots ?? []), { id, ...rect, title: "Novo item", description: "Explique o que este botão faz." }] }
                     : shot));
+                  setHotspotsDirty(true);
                   setSelected(id);
                 }}
               />
               <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-secondary/50 p-2">
+                  <span className="text-xs text-muted-foreground">{activeHotspots.length} marcação(ões) nesta tela</span>
+                  <Button type="button" size="sm" onClick={() => void saveHotspotChanges()} disabled={savingHotspots || !hotspotsDirty}>
+                    <Save /> {savingHotspots ? "Salvando..." : hotspotsDirty ? "Salvar posições e explicações" : "Posições salvas"}
+                  </Button>
+                </div>
                 {sel ? (
                   <div className="space-y-3 rounded-xl border border-lime bg-background p-4">
                     <p className="text-xs font-bold uppercase tracking-wider text-primary">
