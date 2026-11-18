@@ -1,7 +1,7 @@
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { AlertCircle, Copy, ImagePlus, RotateCcw, Square, Volume2 } from "lucide-react";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import {
@@ -80,8 +80,8 @@ function readError(error: Error) {
 function textOf(m: UIMessage) {
   return m.parts
     .filter((p): p is { type: "text"; text: string } => p.type === "text")
-    .map((p) => p.text.replace(/\\[\\[VISUAL:[^\\]]+\\]\\]/g, ""))
-    .join("\\n");
+    .map((p) => p.text.replace(/\\[VISUAL:[^\\]]+\\]/g, ""))
+    .join("\n");
 }
 
 function AssistantVisual({ lessonTitle, screenshot }: { lessonTitle: string; screenshot: LessonScreenshot }) {
@@ -106,7 +106,7 @@ function AssistantVisual({ lessonTitle, screenshot }: { lessonTitle: string; scr
 }
 
 function AssistantResponse({ text, course }: { text: string; course: ReturnType<typeof useCourse> }) {
-  const token = /\\[\\[VISUAL:([^:\\]]+):([^\\]]+)\\]\\]/g;
+  const token = /\\[VISUAL:([^:\\]]+):([^\\]]+)\\]/g;
   const parts: Array<{ type: "text"; value: string; key: string } | { type: "visual"; lessonId: string; screenshotId: string; key: string }> = [];
   let cursor = 0;
   let match: RegExpExecArray | null;
