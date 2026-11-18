@@ -27,7 +27,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { fileToCompressedBlob } from "@/lib/course/image";
+import { fileToCompressedBlob, fileToCompressedDataUrl } from "@/lib/course/image";
 import { loadCourseFromSupabase, newId, orderedLessons, resetCourse, saveCourseToSupabase, useCourse } from "@/lib/course/store";
 import { seedCourse } from "@/lib/course/seed";
 import type { Course, Hotspot, Lesson, LessonScreenshot, Module } from "@/lib/course/types";
@@ -859,56 +859,50 @@ function LessonEditor({
     if (!screenshots.length) return toast.error("Envie primeiro os prints da aula.");
     setGenerating(true);
     try {
-      // A montagem básica é local: não baixa novamente os arquivos e não depende da Gemini.
-      const orderedScreens = screenshots.map((shot, index) => ({
-        ...shot,
-        caption: shot.caption?.trim() || `Etapa ${index + 1}`,
-        hotspots: shot.hotspots ?? [],
+      const images = await Promise.all(screenshots.map(async (shot, index) => {
+        const response = await fetch(shot.image);
+        if (!response.ok) throw new Error("Não foi possível carregar o print " + (index + 1) + " para análise.");
+        const sourceBlob = await response.blob();
+        const sourceFile = new File([sourceBlob], "print-" + (index + 1) + ".jpg", { type: sourceBlob.type || "image/jpeg" });
+        const dataUrl = await fileToCompressedDataUrl(sourceFile, 1800, 0.82);
+        const comma = dataUrl.indexOf(",");
+        if (comma < 0) throw new Error("Não foi possível preparar o print " + (index + 1) + ".");
+        return { data: dataUrl.slice(comma + 1), mimeType: "image/jpeg" };
       }));
-      const lessonTitle = l.title.trim() && l.title !== "Nova aula"
-        ? l.title.trim()
-        : (orderedScreens[0]?.caption || "Nova aula");
-      const steps = orderedScreens.map((shot, index) => {
-        const existingItems = shot.hotspots.length
-          ? `\n\nItens já cadastrados nesta tela: ${shot.hotspots.map((item) => item.title).join(", ")}.`
-          : "\n\nAbra o print no editor e marque os botões, campos ou menus importantes para adicionar explicações interativas.";
-        return `### Etapa ${index + 1} — ${shot.caption}\n\nConfira esta tela do Emissor Future e siga a sequência apresentada no seu processo.${existingItems}`;
+      const response = await fetch(SUPABASE_URL + "/functions/v1/course-media", {
+        method: "POST",
+        headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + accessToken, "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "generate-lesson", images }),
+      });
+      const generated = await response.json().catch(() => ({})) as { error?: string; title?: string; summary?: string; path?: string; content?: string; screenshots?: Array<{ index: number; caption?: string; hotspots?: Array<{ x:number; y:number; w:number; h:number; title:string; description:string; tip?:string }> }> };
+      if (!response.ok) throw new Error(generated.error || "A IA não conseguiu analisar os prints. Tente novamente.");
+      const generatedScreens = Array.isArray(generated.screenshots) ? generated.screenshots : [];
+      if (generatedScreens.length !== screenshots.length) throw new Error("A IA não retornou uma análise para todos os prints. Nenhuma alteração foi salva; tente novamente.");
+      const orderedScreens: LessonScreenshot[] = screenshots.map((shot, index) => {
+        const analyzed = generatedScreens.find((item) => item.index === index);
+        const hotspots: Hotspot[] = Array.isArray(analyzed?.hotspots) ? analyzed.hotspots.map((point, pointIndex) => ({
+          id: newId("ponto-" + (index + 1) + "-" + (pointIndex + 1)),
+          x: point.x, y: point.y, w: point.w, h: point.h, title: point.title, description: point.description, tip: point.tip || undefined,
+        })) : (shot.hotspots ?? []);
+        return { ...shot, caption: analyzed?.caption?.trim() || ("Tela " + (index + 1)), hotspots };
       });
       const generatedLesson: Lesson = {
-        ...l,
-        title: lessonTitle,
-        summary: l.summary.trim() || `Aprenda a executar o processo ${lessonTitle} no Emissor Future, acompanhando cada tela na ordem.`,
-        content: [
-          `# ${lessonTitle}`,
-          "",
-          "## Objetivo",
-          `Este guia organiza os prints enviados na ordem do processo ${lessonTitle}. Use as etapas abaixo para acompanhar a operação no Emissor Future.`,
-          "",
-          "## Passo a passo",
-          "",
-          ...steps,
-          "",
-          "> Dica: os prints são mantidos na ordem em que foram enviados. Para explicar um botão ou campo, selecione a área correspondente no editor e preencha o nome e a função. Assim, a aula terá marcações verdes e narração sem atribuir funções incorretas aos elementos.",
-        ].join("\n"),
-        screenshots: orderedScreens,
-        image: orderedScreens[0]?.image,
-        hotspots: orderedScreens[0]?.hotspots ?? [],
+        ...l, title: generated.title?.trim() || l.title, summary: generated.summary?.trim() || l.summary,
+        path: generated.path?.trim() || l.path, content: generated.content?.trim() || l.content,
+        screenshots: orderedScreens, image: orderedScreens[0]?.image, hotspots: orderedScreens[0]?.hotspots ?? [],
       };
-      const nextCourse: Course = {
-        ...course,
-        lessons: { ...course.lessons, [l.id]: generatedLesson },
-      };
+      const nextCourse: Course = { ...course, lessons: { ...course.lessons, [l.id]: generatedLesson } };
+      await onSaveGenerated(nextCourse);
       update(() => nextCourse);
       setActiveScreenshotId(orderedScreens[0]?.id ?? null);
-      await onSaveGenerated(nextCourse);
-      toast.success("A estrutura da aula foi montada e salva sem usar IA. Revise os prints e marque os botões e campos para completar as explicações interativas.");
+      setSelected(null);
+      toast.success("Aula analisada pela IA: imagens, etapas, marcações numeradas e explicações foram salvas.");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Não consegui montar e salvar a aula.");
+      toast.error(error instanceof Error ? error.message : "Não consegui analisar e montar a aula.");
     } finally {
       setGenerating(false);
     }
   };
-
   const removeScreenshot = async (id: string) => {
     const next = screenshots.filter((shot) => shot.id !== id);
     const nextLesson: Lesson = {
