@@ -1,5 +1,5 @@
 import { createGoogleGenerativeAI } from "npm:@ai-sdk/google@4.0.121";
-import { convertToModelMessages, streamText, type UIMessage } from "npm:ai@7.0.170";
+import { convertToModelMessages, generateText, streamText, type UIMessage } from "npm:ai@7.0.170";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -95,12 +95,40 @@ async function sha256(value: string) {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-async function errorFingerprint(message: UIMessage) {
+async function errorFingerprint(
+  message: UIMessage,
+  google: ReturnType<typeof createGoogleGenerativeAI>,
+  model: string,
+) {
   const image = imageDataFromMessage(message);
-  if (image) return { fingerprint: await sha256(image), signature: "imagem:" + (await sha256(image)).slice(0, 24), hasImage: true };
-  const normalized = sanitizeText(textFromMessage(message)).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  let sourceText = textFromMessage(message);
+  if (image) {
+    try {
+      const extracted = await generateText({
+        model: google(model),
+        system: "Analise o print enviado e extraia somente a mensagem principal do erro, código técnico e nome do serviço/tela se estiverem claramente visíveis. Ignore nomes, CPF, CNPJ, e-mails, valores e dados pessoais. Não diagnostique nem invente. Se não houver mensagem de erro legível, responda exatamente: SEM_MENSAGEM_LEGIVEL.",
+        messages: await convertToModelMessages([message]),
+        maxOutputTokens: 120,
+        maxRetries: 1,
+      });
+      sourceText = extracted.text.trim();
+    } catch (error) {
+      console.warn("Não foi possível extrair a assinatura do print; usando impressão digital da imagem.", error);
+    }
+    if (!sourceText || /SEM_MENSAGEM_LEGIVEL/i.test(sourceText)) {
+      const fingerprint = await sha256(image);
+      return { fingerprint, signature: "imagem:" + fingerprint.slice(0, 24), hasImage: true };
+    }
+  }
+  const normalized = sanitizeText(sourceText)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[“”"']/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
   if (!normalized) return null;
-  return { fingerprint: await sha256(normalized), signature: normalized.slice(0, 240), hasImage: false };
+  return { fingerprint: await sha256(normalized), signature: normalized.slice(0, 240), hasImage: Boolean(image) };
 }
 
 async function knownSolution(fingerprint: string) {
@@ -191,8 +219,10 @@ Deno.serve(async (request: Request) => {
     const tela = typeof body.tela === "string" ? body.tela.slice(0, 80) : undefined;
     const lastUser = latestUserMessage(messages);
     const userText = textFromMessage(lastUser);
+    const google = createGoogleGenerativeAI({ apiKey });
+    const model = Deno.env.get("GEMINI_MODEL") || "gemini-3.5-flash-lite";
     const fingerprintData = lastUser && isLikelyError(userText, Boolean(imageDataFromMessage(lastUser)))
-      ? await errorFingerprint(lastUser)
+      ? await errorFingerprint(lastUser, google, model)
       : null;
 
     if (fingerprintData) {
@@ -203,8 +233,6 @@ Deno.serve(async (request: Request) => {
       }
     }
 
-    const google = createGoogleGenerativeAI({ apiKey });
-    const model = Deno.env.get("GEMINI_MODEL") || "gemini-3.5-flash-lite";
     const result = streamText({
       model: google(model),
       system: buildSystemPrompt(knowledge, tela),
