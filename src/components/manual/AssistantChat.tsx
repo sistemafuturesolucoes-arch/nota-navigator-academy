@@ -31,6 +31,8 @@ import { Shimmer } from "@/components/ai-elements/shimmer";
 import { Button } from "@/components/ui/button";
 import { useSpeech } from "@/hooks/use-speech";
 import { buildKnowledge } from "@/lib/course/knowledge";
+import { InteractiveScreen } from "@/components/manual/InteractiveScreen";
+import type { LessonScreenshot } from "@/lib/course/types";
 import { useCourse } from "@/lib/course/store";
 
 const CHAT_KEY = "future-manual-chat-v1";
@@ -78,8 +80,60 @@ function readError(error: Error) {
 function textOf(m: UIMessage) {
   return m.parts
     .filter((p): p is { type: "text"; text: string } => p.type === "text")
-    .map((p) => p.text)
-    .join("\n");
+    .map((p) => p.text.replace(/\\[\\[VISUAL:[^\\]]+\\]\\]/g, ""))
+    .join("\\n");
+}
+
+function AssistantVisual({ lessonTitle, screenshot }: { lessonTitle: string; screenshot: LessonScreenshot }) {
+  const [activeId, setActiveId] = useState<string | null>(null);
+  return (
+    <section className="space-y-2 rounded-xl border bg-card p-3">
+      <div className="flex items-center gap-2 text-sm font-semibold">
+        <ImagePlus className="size-4 text-primary" />
+        <span>Veja esta etapa: {screenshot.caption || lessonTitle}</span>
+      </div>
+      <InteractiveScreen
+        image={screenshot.image}
+        alt={`Print de referência: ${lessonTitle}`}
+        hotspots={screenshot.hotspots ?? []}
+        mode="xray"
+        activeId={activeId}
+        onSelect={setActiveId}
+      />
+      <p className="text-xs text-muted-foreground">Clique nos destaques numerados para abrir a explicação de cada parte da tela.</p>
+    </section>
+  );
+}
+
+function AssistantResponse({ text, course }: { text: string; course: ReturnType<typeof useCourse> }) {
+  const token = /\\[\\[VISUAL:([^:\\]]+):([^\\]]+)\\]\\]/g;
+  const parts: Array<{ type: "text"; value: string; key: string } | { type: "visual"; lessonId: string; screenshotId: string; key: string }> = [];
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+  while ((match = token.exec(text)) !== null) {
+    if (match.index > cursor) parts.push({ type: "text", value: text.slice(cursor, match.index), key: `text-${cursor}` });
+    parts.push({ type: "visual", lessonId: match[1]!, screenshotId: match[2]!, key: `visual-${match.index}` });
+    cursor = match.index + match[0].length;
+  }
+  if (cursor < text.length) parts.push({ type: "text", value: text.slice(cursor), key: `text-${cursor}` });
+  if (parts.length === 0) return <MessageResponse>{text}</MessageResponse>;
+
+  return (
+    <div className="space-y-3">
+      {parts.map((part) => {
+        if (part.type === "text") return part.value.trim() ? <MessageResponse key={part.key}>{part.value}</MessageResponse> : null;
+        const lesson = course.lessons[part.lessonId];
+        const screenshots = lesson?.screenshots?.length
+          ? lesson.screenshots
+          : lesson?.image
+            ? [{ id: `screen-${lesson.id}`, image: lesson.image, caption: "", hotspots: lesson.hotspots }]
+            : [];
+        const screenshot = screenshots.find((item) => item.id === part.screenshotId);
+        if (!lesson || !screenshot?.image) return null;
+        return <AssistantVisual key={part.key} lessonTitle={lesson.title} screenshot={screenshot} />;
+      })}
+    </div>
+  );
 }
 
 function AttachButton() {
@@ -207,7 +261,7 @@ export function AssistantChat({ initialMessages, tela }: { initialMessages: UIMe
                   {m.parts.map((p, i) => {
                     if (p.type === "text")
                       return m.role === "assistant" ? (
-                        <MessageResponse key={i}>{p.text}</MessageResponse>
+                        <AssistantResponse key={i} text={p.text} course={course} />
                       ) : (
                         <p key={i} className="whitespace-pre-wrap">
                           {p.text}
