@@ -49,7 +49,10 @@ export function AppHeader() {
     setError("");
     try {
       const session = await adminRequest("login", { username, password }) as AdminSession;
-      sessionStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(session));
+      localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify({
+        ...session,
+        expires_at: Date.now() + Math.max(60, Number(session.expires_in) || 3600) * 1000,
+      }));
       setPanelOpen(false);
       setPassword("");
       await navigate({ to: "/admin" });
@@ -62,6 +65,11 @@ export function AppHeader() {
 
   const openPanel = () => {
     setError("");
+    // The admin route validates and refreshes the stored token before showing protected content.
+    if (localStorage.getItem(ADMIN_SESSION_KEY)) {
+      void navigate({ to: "/admin" });
+      return;
+    }
     setPanelOpen(true);
   };
 
