@@ -11,6 +11,7 @@ import {
   Info,
   RotateCcw,
   Save,
+  Sparkles,
   ShieldCheck,
   LogOut,
   Trash2,
