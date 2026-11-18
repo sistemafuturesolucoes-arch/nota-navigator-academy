@@ -7,6 +7,66 @@ const COURSE_KEY = "future-manual-course-v1";
 const PROGRESS_KEY = "future-manual-progress-v1";
 const SUPABASE_URL = "https://itbppoailqkuxajesgys.supabase.co";
 const SUPABASE_KEY = "sb_publishable_J3-cgRigKn2QardNRaOFRQ_Jja51yof";
+const ADMIN_AUTH_URL = `${SUPABASE_URL}/functions/v1/admin-auth`;
+const ADMIN_SESSION_KEY = "future-manual-admin-session-v1";
+
+type StoredAdminSession = {
+  access_token: string;
+  refresh_token: string;
+  expires_in?: number;
+  expires_at?: number;
+};
+
+let refreshInFlight: Promise<string> | null = null;
+
+async function refreshAdminAccessToken(): Promise<string> {
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = (async () => {
+    if (typeof window === "undefined") throw new Error("Sessão administrativa indisponível.");
+    const raw = window.localStorage.getItem(ADMIN_SESSION_KEY);
+    if (!raw) throw new Error("Sua sessão expirou. Entre novamente no painel para salvar as alterações.");
+    let saved: StoredAdminSession;
+    try { saved = JSON.parse(raw) as StoredAdminSession; } catch {
+      throw new Error("Não foi possível recuperar sua sessão. Entre novamente no painel.");
+    }
+    if (!saved.refresh_token) throw new Error("Sua sessão expirou. Entre novamente no painel para salvar as alterações.");
+
+    const response = await fetch(ADMIN_AUTH_URL, {
+      method: "POST",
+      headers: { apikey: SUPABASE_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "refresh", refreshToken: saved.refresh_token }),
+    });
+    const refreshed = await response.json().catch(() => ({})) as Partial<StoredAdminSession> & { error?: string };
+    if (!response.ok || !refreshed.access_token || !refreshed.refresh_token) {
+      throw new Error(refreshed.error || "Sua sessão expirou. Entre novamente no painel; suas alterações continuam nesta tela.");
+    }
+    const next: StoredAdminSession = {
+      ...saved,
+      ...refreshed,
+      expires_at: Date.now() + Math.max(60, Number(refreshed.expires_in) || 3600) * 1000,
+    };
+    window.localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(next));
+    return next.access_token;
+  })().finally(() => { refreshInFlight = null; });
+  return refreshInFlight;
+}
+
+async function currentAdminAccessToken(fallback: string): Promise<string> {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = window.localStorage.getItem(ADMIN_SESSION_KEY);
+    if (!raw) return fallback;
+    const saved = JSON.parse(raw) as StoredAdminSession;
+    if (!saved.refresh_token) return fallback;
+    if (!saved.access_token || (saved.expires_at && saved.expires_at <= Date.now() + 90_000)) {
+      return refreshAdminAccessToken();
+    }
+    return saved.access_token;
+  } catch (error) {
+    if (error instanceof SyntaxError) return fallback;
+    throw error;
+  }
+}
 
 type Listener = () => void;
 
@@ -72,9 +132,20 @@ function authHeaders(accessToken?: string) {
 }
 
 async function rest(path: string, accessToken?: string, init: RequestInit = {}) {
-  const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    ...init, headers: { ...authHeaders(accessToken), ...(init.headers ?? {}) },
+  let token = await currentAdminAccessToken(accessToken || "");
+  const send = () => fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    ...init, headers: { ...authHeaders(token), ...(init.headers ?? {}) },
   });
+  let response = await send();
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    if (/PGRST303|JWT expired|invalid JWT/i.test(detail)) {
+      token = await refreshAdminAccessToken();
+      response = await send();
+    } else {
+      throw new Error(detail || `Falha ao acessar o banco (HTTP ${response.status}).`);
+    }
+  }
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
     throw new Error(detail || `Falha ao acessar o banco (HTTP ${response.status}).`);
