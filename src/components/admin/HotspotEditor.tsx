@@ -145,7 +145,7 @@ export function HotspotEditor({
       ref={ref}
       tabIndex={0}
       aria-label="Editor de marcadores. Selecione um marcador e use as setas do teclado para movê-lo."
-      className="relative cursor-crosshair touch-none select-none overflow-hidden rounded-xl border bg-card outline-none focus-visible:ring-2 focus-visible:ring-lime"
+      className="relative inline-block w-fit max-w-full align-top cursor-crosshair touch-none select-none overflow-hidden rounded-xl border bg-card outline-none focus-visible:ring-2 focus-visible:ring-lime"
       onPointerDown={imageUnavailable ? undefined : onDown}
       onPointerMove={imageUnavailable ? undefined : onMove}
       onPointerUp={imageUnavailable ? undefined : onUp}
@@ -157,7 +157,7 @@ export function HotspotEditor({
           <p className="max-w-md text-sm text-muted-foreground">Este print ainda não está disponível no armazenamento publicado. Envie novamente a imagem original para continuar.</p>
         </div>
       ) : (
-        <img src={image} alt="" onError={() => setImageUnavailable(true)} className="pointer-events-none block w-full" draggable={false} />
+        <img src={image} alt="" onError={() => setImageUnavailable(true)} className="pointer-events-none block h-auto w-auto max-w-full" draggable={false} />
       )}
       {!imageUnavailable && hotspots.map((h, i) => {
         const sel = h.id === selectedId;
@@ -182,8 +182,8 @@ export function HotspotEditor({
               capture(e);
               const p = pct(e);
               onSelect(h.id);
-              setDrag({ kind: "move", id: h.id, dx: p.x - h.x, dy: p.y - h.y, origin: { x: h.x, y: h.y, w: h.w, h: h.h } });
-              setDraft({ x: h.x, y: h.y, w: h.w, h: h.h });
+              setDrag({ kind: "move", id: h.id, dx: p.x - safeX, dy: p.y - safeY, origin: safeRect });
+              setDraft(safeRect);
             }}
           >
             <span className="pointer-events-none absolute left-1 top-1 flex size-5 items-center justify-center rounded-full bg-lime text-[10px] font-bold text-lime-foreground">
@@ -196,8 +196,8 @@ export function HotspotEditor({
                 onPointerDown={(e) => {
                   e.stopPropagation();
                   capture(e);
-                  setDrag({ kind: "resize", id: h.id, origin: { x: h.x, y: h.y, w: h.w, h: h.h } });
-                  setDraft({ x: h.x, y: h.y, w: h.w, h: h.h });
+                  setDrag({ kind: "resize", id: h.id, origin: safeRect });
+                  setDraft(safeRect);
                 }}
               />
             )}
