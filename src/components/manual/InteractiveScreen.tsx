@@ -19,6 +19,7 @@ type Props = {
   onSelect: (id: string | null) => void;
   onNext?: (() => void) | undefined;
   onPrev?: (() => void) | undefined;
+  fullscreen?: boolean;
 };
 
 export function narrationOf(h: Hotspot) {
@@ -34,6 +35,7 @@ export function InteractiveScreen({
   onSelect,
   onNext,
   onPrev,
+  fullscreen = false,
 }: Props) {
   const activeIndex = hotspots.findIndex((h) => h.id === activeId);
   const active = activeIndex >= 0 ? hotspots[activeIndex] : undefined;
@@ -53,9 +55,9 @@ export function InteractiveScreen({
   const showMarkers = mode !== "tour";
 
   return (
-    <div ref={wrapRef} className="relative w-full max-w-[720px] align-top">
+    <div ref={wrapRef} className={cn("relative align-top", fullscreen ? "flex w-full max-w-none justify-center" : "w-full max-w-[720px]")}>
       <div
-        className="relative grid w-full max-w-[720px] overflow-hidden rounded-xl bg-card shadow-card ring-1 ring-border"
+        className={cn("relative overflow-hidden rounded-xl bg-card shadow-card ring-1 ring-border", fullscreen ? "grid w-fit max-w-full" : "grid w-full max-w-[720px]")}
         onClick={() => mode !== "tour" && onSelect(null)}
       >
         {imageUnavailable ? (
@@ -64,7 +66,7 @@ export function InteractiveScreen({
             <p className="max-w-md text-sm text-muted-foreground">A imagem desta tela ainda não está incluída nos arquivos publicados. O conteúdo e as explicações da aula continuam disponíveis.</p>
           </div>
         ) : (
-          <img src={image} alt={alt} onError={() => setImageUnavailable(true)} className="col-start-1 row-start-1 block h-auto w-full max-w-full select-none" draggable={false} />
+          <img src={image} alt={alt} onError={() => setImageUnavailable(true)} className={cn("col-start-1 row-start-1 block h-auto select-none", fullscreen ? "max-h-[calc(100vh-3rem)] w-auto max-w-full object-contain" : "w-full max-w-full")} draggable={false} />
         )}
 
         {!imageUnavailable && mode === "tour" && !active && <div className="absolute inset-0 bg-[var(--spotlight-veil)]" />}
