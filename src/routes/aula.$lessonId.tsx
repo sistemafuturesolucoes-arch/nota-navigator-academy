@@ -64,9 +64,19 @@ function LessonPage() {
 
   const [mode, setMode] = useState<ScreenMode>("explore");
   const [activeId, setActiveId] = useState<string | null>(ponto ?? null);
-  const screenshots = lesson?.screenshots?.length
+  const screenshots = (Array.isArray(lesson?.screenshots) && lesson.screenshots.length
     ? lesson.screenshots
-    : lesson?.image ? [{ id: `screen-${lesson.id}`, image: lesson.image, hotspots: lesson.hotspots }] : [];
+    : lesson?.image ? [{ id: `screen-${lesson.id}`, image: lesson.image, hotspots: lesson.hotspots }] : [])
+    .filter((shot) => shot && typeof shot.image === "string" && shot.image.length > 0)
+    .map((shot, index) => ({
+      ...shot,
+      id: typeof shot.id === "string" && shot.id ? shot.id : `screen-${lesson?.id}-${index + 1}`,
+      hotspots: Array.isArray(shot.hotspots) ? shot.hotspots.filter((h) => h && typeof h.id === "string").map((h) => ({
+        ...h,
+        title: typeof h.title === "string" ? h.title : "Item sem título",
+        description: typeof h.description === "string" ? h.description : "",
+      })) : [],
+    }));
   const [activeScreenshotId, setActiveScreenshotId] = useState<string | null>(screenshots[0]?.id ?? null);
   const activeScreenshot = screenshots.find((shot) => shot.id === activeScreenshotId) ?? screenshots[0];
   const [autoNarrate, setAutoNarrate] = useState(false);
@@ -179,7 +189,7 @@ function LessonPage() {
                     className={cn("flex items-center gap-2 rounded-lg border px-2 py-1.5 text-sm transition-colors", activeScreenshot?.id === shot.id ? "border-primary bg-secondary font-semibold" : "bg-card hover:bg-muted")}>
                     <img src={shot.image} alt="" className="size-9 rounded object-cover" />
                     <span>{shot.caption || `Etapa ${index + 1}`}</span>
-                    <span className="text-xs text-muted-foreground">{shot.hotspots.length} itens</span>
+                    <span className="text-xs text-muted-foreground">{(shot.hotspots ?? []).length} itens</span>
                   </button>
                 ))}
               </div>
