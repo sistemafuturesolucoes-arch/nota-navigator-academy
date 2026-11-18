@@ -34,6 +34,31 @@ export function HotspotEditor({
   const [imageUnavailable, setImageUnavailable] = useState(false);
 
   useEffect(() => {
+    if (!selectedId) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, [contenteditable='true'], [role='textbox']")) return;
+      const selected = hotspots.find((item) => item.id === selectedId);
+      if (!selected) return;
+      event.preventDefault();
+      const step = event.shiftKey ? 2 : 0.5;
+      const dx = event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0;
+      const dy = event.key === "ArrowUp" ? -step : event.key === "ArrowDown" ? step : 0;
+      const w = clamp(Number(selected.w) || 1, 1, 100);
+      const h = clamp(Number(selected.h) || 1, 1, 100);
+      onChange(selectedId, {
+        x: round(clamp((Number(selected.x) || 0) + dx, 0, 100 - w)),
+        y: round(clamp((Number(selected.y) || 0) + dy, 0, 100 - h)),
+        w,
+        h,
+      });
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedId, hotspots, onChange]);
+
+  useEffect(() => {
     setImageUnavailable(false);
     setDrag(null);
     setDraft(null);
@@ -118,7 +143,7 @@ export function HotspotEditor({
   return (
     <div
       ref={ref}
-      className="relative cursor-crosshair touch-none select-none overflow-hidden rounded-xl border bg-card"
+      tabIndex={0}\n      aria-label="Editor de marcadores. Selecione um marcador e use as setas do teclado para movê-lo."\n      className="relative cursor-crosshair touch-none select-none overflow-hidden rounded-xl border bg-card outline-none focus-visible:ring-2 focus-visible:ring-lime"
       onPointerDown={imageUnavailable ? undefined : onDown}
       onPointerMove={imageUnavailable ? undefined : onMove}
       onPointerUp={imageUnavailable ? undefined : onUp}
@@ -134,8 +159,13 @@ export function HotspotEditor({
       )}
       {!imageUnavailable && hotspots.map((h, i) => {
         const sel = h.id === selectedId;
+        const safeW = clamp(Number.isFinite(Number(h.w)) ? Number(h.w) : 1, 1, 100);
+        const safeH = clamp(Number.isFinite(Number(h.h)) ? Number(h.h) : 1, 1, 100);
+        const safeX = clamp(Number.isFinite(Number(h.x)) ? Number(h.x) : 0, 0, 100 - safeW);
+        const safeY = clamp(Number.isFinite(Number(h.y)) ? Number(h.y) : 0, 0, 100 - safeH);
+        const safeRect = { x: safeX, y: safeY, w: safeW, h: safeH };
         const preview = drag && drag.kind !== "draw" && drag.id === h.id ? draft : null;
-        const rect = preview ?? h;
+        const rect = preview ?? safeRect;
         return (
           <div
             key={h.id}
@@ -154,7 +184,7 @@ export function HotspotEditor({
               setDraft({ x: h.x, y: h.y, w: h.w, h: h.h });
             }}
           >
-            <span className="pointer-events-none absolute -left-2 -top-2 flex size-5 items-center justify-center rounded-full bg-lime text-[10px] font-bold text-lime-foreground">
+            <span className="pointer-events-none absolute left-1 top-1 flex size-5 items-center justify-center rounded-full bg-lime text-[10px] font-bold text-lime-foreground">
               {i + 1}
             </span>
             {sel && (
