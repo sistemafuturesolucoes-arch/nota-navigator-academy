@@ -859,68 +859,55 @@ function LessonEditor({
   };
 
   const generateLesson = async () => {
-    if (!accessToken) return toast.error("Entre novamente no painel para usar a IA.");
+    if (!accessToken) return toast.error("Entre novamente no painel para salvar a aula.");
     if (!screenshots.length) return toast.error("Envie primeiro os prints da aula.");
     setGenerating(true);
     try {
-      const images = await Promise.all(screenshots.map(async (shot, index) => {
-        const downloaded = await fetch(shot.image);
-        if (!downloaded.ok) throw new Error(`Não consegui abrir o Print ${index + 1} no navegador. Confira sua conexão e tente novamente.`);
-        const sourceBlob = await downloaded.blob();
-        const sourceFile = new File([sourceBlob], `print-${index + 1}.jpg`, { type: sourceBlob.type || "image/jpeg" });
-        const compacted = await fileToCompressedBlob(sourceFile, 1400, 0.68);
-        return { data: await blobToBase64(compacted), mimeType: "image/jpeg" };
+      // A montagem básica é local: não baixa novamente os arquivos e não depende da Gemini.
+      const orderedScreens = screenshots.map((shot, index) => ({
+        ...shot,
+        caption: shot.caption?.trim() || `Etapa ${index + 1}`,
+        hotspots: shot.hotspots ?? [],
       }));
-      const totalBase64 = images.reduce((sum, item) => sum + item.data.length, 0);
-      if (totalBase64 > 27 * 1024 * 1024) throw new Error("Os prints ficaram grandes para enviar de uma vez. Divida o processo em duas aulas.");
-      const response = await fetch(`${SUPABASE_URL}/functions/v1/course-media`, {
-        method: "POST",
-        headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "generate-lesson", images }),
-      });
-      const data = await response.json() as {
-        error?: string; moduleTitle?: string; moduleDescription?: string; title?: string;
-        summary?: string; path?: string; content?: string;
-        screenshots?: Array<{ index: number; caption?: string; hotspots: Hotspot[] }>;
-      };
-      if (!response.ok) throw new Error(data.error || "A IA não conseguiu gerar a aula.");
-      const generatedScreens = screenshots.map((shot, index) => {
-        const generated = data.screenshots?.find((item) => item.index === index);
-        return { ...shot, caption: generated?.caption || shot.caption, hotspots: generated?.hotspots ?? [] };
+      const lessonTitle = l.title.trim() && l.title !== "Nova aula"
+        ? l.title.trim()
+        : (orderedScreens[0]?.caption || "Nova aula");
+      const steps = orderedScreens.map((shot, index) => {
+        const existingItems = shot.hotspots.length
+          ? `\\n\\nItens já cadastrados nesta tela: ${shot.hotspots.map((item) => item.title).join(", ")}.`
+          : "\\n\\nAbra o print no editor e marque os botões, campos ou menus importantes para adicionar explicações interativas.";
+        return `### Etapa ${index + 1} — ${shot.caption}\\n\\nConfira esta tela do Emissor Future e siga a sequência apresentada no seu processo.${existingItems}`;
       });
       const generatedLesson: Lesson = {
         ...l,
-        ...(data.title ? { title: data.title } : {}),
-        ...(data.summary ? { summary: data.summary } : {}),
-        ...(data.path ? { path: data.path } : {}),
-        ...(data.content ? { content: data.content } : {}),
-        screenshots: generatedScreens,
-        image: generatedScreens[0]?.image,
-        hotspots: generatedScreens[0]?.hotspots ?? [],
+        title: lessonTitle,
+        summary: l.summary.trim() || `Aprenda a executar o processo ${lessonTitle} no Emissor Future, acompanhando cada tela na ordem.`,
+        content: [
+          `# ${lessonTitle}`,
+          "",
+          "## Objetivo",
+          `Este guia organiza os prints enviados na ordem do processo ${lessonTitle}. Use as etapas abaixo para acompanhar a operação no Emissor Future.`,
+          "",
+          "## Passo a passo",
+          "",
+          ...steps,
+          "",
+          "> Dica: os prints são mantidos na ordem em que foram enviados. Para explicar um botão ou campo, selecione a área correspondente no editor e preencha o nome e a função. Assim, a aula terá marcações verdes e narração sem atribuir funções incorretas aos elementos.",
+        ].join("\\n"),
+        screenshots: orderedScreens,
+        image: orderedScreens[0]?.image,
+        hotspots: orderedScreens[0]?.hotspots ?? [],
       };
       const nextCourse: Course = {
         ...course,
         lessons: { ...course.lessons, [l.id]: generatedLesson },
-        modules: course.modules.map((item) => item.id === mod?.id && data.moduleTitle
-          ? {
-              ...item,
-              title: item.title === "Novo módulo" ? data.moduleTitle : item.title,
-              description: item.description || data.moduleDescription || item.description,
-            }
-          : item),
       };
       update(() => nextCourse);
-      setActiveScreenshotId(generatedScreens[0]?.id ?? null);
-      try {
-        await onSaveGenerated(nextCourse);
-        toast.success("Aula detalhada gerada e salva com todos os prints e marcações. O áudio e os textos ficam disponíveis na aula.");
-      } catch (saveError) {
-        toast.error(saveError instanceof Error
-          ? `A aula foi gerada, mas não consegui salvar no banco: ${saveError.message}. Clique em Salvar alterações.`
-          : "A aula foi gerada, mas não consegui salvar no banco. Clique em Salvar alterações.");
-      }
+      setActiveScreenshotId(orderedScreens[0]?.id ?? null);
+      await onSaveGenerated(nextCourse);
+      toast.success("A estrutura da aula foi montada e salva sem usar IA. Revise os prints e marque os botões e campos para completar as explicações interativas.");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Não consegui gerar a aula.");
+      toast.error(error instanceof Error ? error.message : "Não consegui montar e salvar a aula.");
     } finally {
       setGenerating(false);
     }
@@ -1039,17 +1026,17 @@ function LessonEditor({
           <div className="flex-1">
             <h3 className="text-lg font-bold">Print e explicações dos botões</h3>
             <p className="text-sm text-muted-foreground">
-              Envie até 8 prints na ordem do processo. Depois gere a aula detalhada. Você também pode ajustar as marcações verdes arrastando sobre cada botão ou campo.
+              Envie até 8 prints na ordem do processo. A aula é montada automaticamente, sem depender de IA. Depois marque os botões e campos para criar as explicações interativas.
             </p>
           </div>
-          <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden"
+          <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg" multiple className="hidden"
             onChange={(e) => { const files = e.target.files; if (files?.length) void uploadPrints(files); e.target.value = ""; }} />
           <Button variant="outline" onClick={() => fileRef.current?.click()} disabled={uploadingPrints || generating}>
             <ImageUp /> {uploadingPrints ? "Salvando prints..." : "Enviar vários prints"}
           </Button>
           <Button variant="lime" onClick={() => void generateLesson()} disabled={!screenshots.length || uploadingPrints || generating}>
             <Sparkles className={generating ? "animate-pulse" : ""} />
-            {generating ? "Gerando aula detalhada..." : "Gerar aula detalhada"}
+            {generating ? "Montando aula..." : "Montar aula automaticamente"}
           </Button>
         </div>
 
