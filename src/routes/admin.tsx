@@ -937,10 +937,6 @@ function LessonEditor({
   const uploadPrints = async (files: FileList | File[]) => {
     const selectedFiles = Array.from(files);
     if (!selectedFiles.length) return;
-    if (screenshots.length + selectedFiles.length > 8) {
-      toast.error("Cada aula pode ter no máximo 8 prints. Remova algum print ou selecione menos imagens.");
-      return;
-    }
     setUploadingPrints(true);
     try {
       if (!accessToken) throw new Error("Entre novamente no painel para enviar imagens.");
@@ -1148,7 +1144,7 @@ function LessonEditor({
           <div className="flex-1">
             <h3 className="text-lg font-bold">Print e explicações dos botões</h3>
             <p className="text-sm text-muted-foreground">
-              Envie até 8 prints na ordem do processo. A IA analisa cada imagem, posiciona os números sobre os controles visíveis e cria as explicações. Você pode arrastar e redimensionar cada marcação ou selecioná-la e movê-la com as setas do teclado (Shift + seta move mais rápido). Os marcadores ficam sempre dentro do print.
+              Envie quantos prints forem necessários, na ordem do processo. A IA analisa cada imagem, posiciona os números sobre os controles visíveis e cria as explicações. Você pode arrastar e redimensionar cada marcação ou selecioná-la e movê-la com as setas do teclado (Shift + seta move mais rápido). Os marcadores ficam sempre dentro do print.
             </p>
           </div>
           <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg" multiple className="hidden"
