@@ -39,10 +39,12 @@ const CHAT_KEY = "future-manual-chat-v1";
 const CHAT_ID = "assistente-future";
 
 const SUGGESTIONS = [
-  "Como cadastrar um produto?",
-  "O que é NCM e onde encontro?",
-  "Qual a diferença entre NF-e e NFC-e?",
-  "Como cadastro um cliente com CNPJ?",
+  "Quero consultar os dados cadastrais de uma empresa. Me peça o CNPJ.",
+  "Quero conferir um documento fiscal antes de emitir. Como faço?",
+  "Como resolvo uma rejeição da SEFAZ?",
+  "Como configuro a tributação de um produto no grupo tributário?",
+  "Como emito um CT-e ou MDF-e?",
+  "Como cadastrar um cliente e preencher os dados corretamente?",
 ];
 
 /** Saved in this browser until the external database is connected. Images are not stored. */
@@ -241,7 +243,9 @@ export function AssistantChat({ initialMessages, tela }: { initialMessages: UIMe
                 Pergunte qualquer coisa sobre o Emissor Future. Recebeu um erro? Clique em <b>Print do erro</b> ou cole a
                 imagem (Ctrl+V) aqui embaixo.
               </p>
-              <div className="mt-6 grid w-full max-w-xl gap-2 sm:grid-cols-2">
+              <div className="mt-6 w-full max-w-2xl">
+                <p className="mb-3 text-sm font-semibold">Sugestões para começar</p>
+                <div className="grid gap-2 sm:grid-cols-2">
                 {SUGGESTIONS.map((s) => (
                   <button
                     key={s}
@@ -252,6 +256,7 @@ export function AssistantChat({ initialMessages, tela }: { initialMessages: UIMe
                     {s}
                   </button>
                 ))}
+                </div>
               </div>
             </div>
           ) : (
