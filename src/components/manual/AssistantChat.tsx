@@ -1,6 +1,6 @@
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
-import { AlertCircle, Copy, ImagePlus, RotateCcw, Square, Volume2 } from "lucide-react";
+import { AlertCircle, Copy, FileText, ImagePlus, RotateCcw, Square, Volume2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -141,9 +141,9 @@ function AssistantResponse({ text, course }: { text: string; course: ReturnType<
 function AttachButton() {
   const attachments = usePromptInputAttachments();
   return (
-    <PromptInputButton onClick={() => attachments.openFileDialog()} aria-label="Enviar print do erro">
+    <PromptInputButton onClick={() => attachments.openFileDialog()} aria-label="Enviar print ou documento">
       <ImagePlus className="size-4" />
-      <span className="text-xs">Print do erro</span>
+      <span className="text-xs">Print ou documento</span>
     </PromptInputButton>
   );
 }
@@ -240,9 +240,7 @@ export function AssistantChat({ initialMessages, tela }: { initialMessages: UIMe
               </div>
               <h2 className="text-2xl font-bold">Como posso ajudar?</h2>
               <p className="mt-2 max-w-md text-muted-foreground">
-                Pergunte qualquer coisa sobre o Emissor Future. Recebeu um erro? Clique em <b>Print do erro</b> ou cole a
-                imagem (Ctrl+V) aqui embaixo.
-              </p>
+                Pergunte qualquer coisa sobre o Emissor Future. Envie prints, XML de NF-e/CT-e/MDF-e ou PDF para uma pré-análise antes de emitir.</p>
               <div className="mt-6 w-full max-w-2xl">
                 <p className="mb-3 text-sm font-semibold">Sugestões para começar</p>
                 <div className="grid gap-2 sm:grid-cols-2">
@@ -274,6 +272,13 @@ export function AssistantChat({ initialMessages, tela }: { initialMessages: UIMe
                       );
                     if (p.type === "file" && p.mediaType.startsWith("image/"))
                       return <img key={i} src={p.url} alt="Print enviado" className="max-h-60 rounded-lg" />;
+                    if (p.type === "file")
+                      return (
+                        <div key={i} className="flex items-center gap-2 rounded-lg border bg-background/60 px-3 py-2 text-sm">
+                          <FileText className="size-4 shrink-0" />
+                          <span className="truncate">{p.filename || "Documento anexado"}</span>
+                        </div>
+                      );
                     return null;
                   })}
                 </MessageContent>
@@ -317,15 +322,15 @@ export function AssistantChat({ initialMessages, tela }: { initialMessages: UIMe
       </Conversation>
 
       <div className="pb-4">
-        <PromptInput onSubmit={send} accept="image/*" multiple maxFiles={4} maxFileSize={8 * 1024 * 1024}
-          onError={(e) => toast.error(e.code === "max_file_size" ? "Imagem muito grande (máx. 8 MB)." : e.code === "accept" ? "Envie apenas imagens." : "Envie no máximo 4 imagens.")}
+        <PromptInput onSubmit={send} accept="image/*,.xml,.txt,.pdf,application/xml,text/xml,application/pdf,text/plain" multiple maxFiles={4} maxFileSize={8 * 1024 * 1024}
+          onError={(e) => toast.error(e.code === "max_file_size" ? "Imagem muito grande (máx. 8 MB)." : e.code === "accept" ? "Envie imagens, XML, TXT ou PDF." : "Envie no máximo 4 arquivos.")}
           className="rounded-2xl bg-card shadow-card"
         >
           <AttachmentList />
           <PromptInputTextarea
             ref={textareaRef}
             autoFocus
-            placeholder="Ex.: Como emito uma NFC-e? ou cole aqui o print do erro"
+            placeholder="Pergunte sobre o sistema ou anexe um print, XML ou PDF para conferir"
           />
           <PromptInputFooter>
             <PromptInputTools>
