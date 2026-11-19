@@ -1,6 +1,6 @@
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
-import { AlertCircle, Copy, FileText, ImagePlus, RotateCcw, Square, Volume2 } from "lucide-react";
+import { AlertCircle, Copy, ExternalLink, FileText, ImagePlus, RotateCcw, Square, Volume2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -278,6 +278,13 @@ export function AssistantChat({ initialMessages, tela }: { initialMessages: UIMe
                           <FileText className="size-4 shrink-0" />
                           <span className="truncate">{p.filename || "Documento anexado"}</span>
                         </div>
+                      );
+                    if (p.type === "source-url")
+                      return (
+                        <a key={i} href={p.url} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-center gap-2 rounded-lg border px-3 py-2 text-xs text-primary underline-offset-4 hover:underline">
+                          <ExternalLink className="size-3 shrink-0" />
+                          <span className="truncate">{p.title || p.url}</span>
+                        </a>
                       );
                     return null;
                   })}
