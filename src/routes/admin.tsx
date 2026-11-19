@@ -62,6 +62,37 @@ function encodeMetadata(value: string) {
   return btoa(unescape(encodeURIComponent(value)));
 }
 
+async function getFreshAdminToken(fallback: string, forceRefresh = false): Promise<string> {
+  const raw = localStorage.getItem(ADMIN_SESSION_KEY);
+  if (!raw) return fallback;
+  let saved: AdminSession;
+  try { saved = JSON.parse(raw) as AdminSession; } catch { return fallback; }
+  if (!saved.refresh_token) return saved.access_token || fallback;
+  if (!forceRefresh && saved.access_token && (!saved.expires_at || saved.expires_at > Date.now() + 90_000)) {
+    return saved.access_token;
+  }
+  const response = await fetch(ADMIN_AUTH_URL, {
+    method: "POST",
+    headers: { apikey: SUPABASE_PUBLISHABLE_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "refresh", refreshToken: saved.refresh_token }),
+  });
+  const refreshed = await response.json().catch(() => ({})) as Partial<AdminSession> & { error?: string };
+  if (!response.ok || !refreshed.access_token || !refreshed.refresh_token) {
+    throw new Error(refreshed.error || "Sua sessão administrativa expirou. Entre novamente no painel.");
+  }
+  const next: AdminSession = {
+    ...saved,
+    ...refreshed,
+    expires_at: Date.now() + Math.max(60, Number(refreshed.expires_in) || 3600) * 1000,
+  };
+  localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(next));
+  return next.access_token;
+}
+
+function isExpiredJwtError(detail: string) {
+  return /exp.*claim|timestamp check failed|jwt expired|invalid jwt/i.test(detail);
+}
+
 async function uploadCourseVideo(file: File, lessonId: string, accessToken: string): Promise<string> {
   if (!file.type.startsWith("video/")) throw new Error("Selecione um arquivo de vídeo.");
   const safeName = file.name.normalize("NFKD").replace(/[^a-zA-Z0-9._-]+/g, "-").slice(-90) || "video.mp4";
@@ -73,17 +104,26 @@ async function uploadCourseVideo(file: File, lessonId: string, accessToken: stri
     `contentType ${encodeMetadata(file.type || "video/mp4")}`,
     `cacheControl ${encodeMetadata("3600")}`,
   ].join(",");
-  const created = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      apikey: SUPABASE_PUBLISHABLE_KEY,
-      Authorization: `Bearer ${accessToken}`,
-      "Tus-Resumable": "1.0.0",
-      "Upload-Length": String(file.size),
-      "Upload-Metadata": metadata,
-      "x-upsert": "false",
-    },
-  });
+  const createUpload = async (forceRefresh = false) => {
+    const token = await getFreshAdminToken(accessToken, forceRefresh);
+    return fetch(endpoint, {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_PUBLISHABLE_KEY,
+        Authorization: `Bearer ${token}`,
+        "Tus-Resumable": "1.0.0",
+        "Upload-Length": String(file.size),
+        "Upload-Metadata": metadata,
+        "x-upsert": "false",
+      },
+    });
+  };
+  let created = await createUpload();
+  if (!created.ok) {
+    const detail = await created.text().catch(() => "");
+    if (isExpiredJwtError(detail)) created = await createUpload(true);
+    else throw new Error(detail || "Não foi possível iniciar o envio do vídeo.");
+  }
   if (!created.ok) throw new Error((await created.text().catch(() => "")) || "Não foi possível iniciar o envio do vídeo.");
   const location = created.headers.get("Location");
   if (!location) throw new Error("O armazenamento não retornou o endereço de envio do vídeo.");
@@ -92,17 +132,26 @@ async function uploadCourseVideo(file: File, lessonId: string, accessToken: stri
   let offset = 0;
   while (offset < file.size) {
     const chunk = file.slice(offset, Math.min(offset + chunkSize, file.size));
-    const response = await fetch(uploadUrl, {
-      method: "PATCH",
-      headers: {
-        apikey: SUPABASE_PUBLISHABLE_KEY,
-        Authorization: `Bearer ${accessToken}`,
-        "Tus-Resumable": "1.0.0",
-        "Upload-Offset": String(offset),
-        "Content-Type": "application/offset+octet-stream",
-      },
-      body: chunk,
-    });
+    const sendChunk = async (forceRefresh = false) => {
+      const token = await getFreshAdminToken(accessToken, forceRefresh);
+      return fetch(uploadUrl, {
+        method: "PATCH",
+        headers: {
+          apikey: SUPABASE_PUBLISHABLE_KEY,
+          Authorization: `Bearer ${token}`,
+          "Tus-Resumable": "1.0.0",
+          "Upload-Offset": String(offset),
+          "Content-Type": "application/offset+octet-stream",
+        },
+        body: chunk,
+      });
+    };
+    let response = await sendChunk();
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      if (isExpiredJwtError(detail)) response = await sendChunk(true);
+      else throw new Error(detail || "O envio do vídeo foi interrompido.");
+    }
     if (!response.ok) throw new Error((await response.text().catch(() => "")) || "O envio do vídeo foi interrompido.");
     const nextOffset = Number(response.headers.get("Upload-Offset"));
     if (!Number.isFinite(nextOffset) || nextOffset <= offset) throw new Error("O armazenamento não confirmou o progresso do vídeo.");
