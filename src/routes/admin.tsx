@@ -163,19 +163,26 @@ async function uploadCourseVideo(file: File, lessonId: string, accessToken: stri
 async function uploadCourseImage(file: File, lessonId: string, accessToken: string): Promise<string> {
   const blob = await fileToCompressedBlob(file);
   const path = `lessons/${lessonId}/${newId("print")}.jpg`;
-  const response = await fetch(
-    `https://itbppoailqkuxajesgys.supabase.co/storage/v1/object/${COURSE_IMAGES_BUCKET}/${path}`,
-    {
+  const endpoint = `${SUPABASE_URL}/storage/v1/object/${COURSE_IMAGES_BUCKET}/${path}`;
+  const sendImage = async (forceRefresh = false) => {
+    const token = await getFreshAdminToken(accessToken, forceRefresh);
+    return fetch(endpoint, {
       method: "POST",
       headers: {
         apikey: SUPABASE_PUBLISHABLE_KEY,
-        Authorization: `Bearer ${accessToken}`,
+        Authorization: `Bearer ${token}`,
         "Content-Type": "image/jpeg",
         "x-upsert": "false",
       },
       body: blob,
-    },
-  );
+    });
+  };
+  let response = await sendImage();
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    if (isExpiredJwtError(detail)) response = await sendImage(true);
+    else throw new Error(detail || "Não foi possível enviar o print ao armazenamento.");
+  }
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
     throw new Error(detail || "Não foi possível enviar o print ao armazenamento.");
