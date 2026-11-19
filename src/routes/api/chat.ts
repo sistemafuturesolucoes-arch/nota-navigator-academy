@@ -34,6 +34,10 @@ export const Route = createFileRoute("/api/chat")({
               "Content-Type": "application/json",
               apikey: SUPABASE_PUBLISHABLE_KEY,
               Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
+              "x-client-ip": request.headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim()
+                || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+                || request.headers.get("x-real-ip")
+                || "unknown",
             },
             body,
             signal: request.signal,
