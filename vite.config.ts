@@ -10,9 +10,14 @@
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
 export default defineConfig({
+  // The CRM exposes this application below /manual. Vite must prefix every generated
+  // client asset URL so browser requests stay inside the CRM proxy route.
+  base: "/manual/",
   tanstackStart: {
+    // Keep router basepath in sync with Vite base. TanStack Start uses this value
+    // during client hydration as well as server-side route matching.
+    router: { basepath: "/manual" },
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
-    // nitro/vite builds from this
     server: { entry: "server" },
   },
 });
