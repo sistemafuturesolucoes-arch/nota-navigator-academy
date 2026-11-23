@@ -1,4 +1,3 @@
-import { useNavigate } from "@tanstack/react-router";
 import { BookOpen, MousePointerClick, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -17,7 +16,6 @@ import { cn } from "@/lib/utils";
 export function SearchCommand({ trigger }: { trigger: "bar" | "hero" }) {
   const [open, setOpen] = useState(false);
   const course = useCourse();
-  const navigate = useNavigate();
   const lessons = orderedLessons(course);
 
   useEffect(() => {
@@ -34,7 +32,7 @@ export function SearchCommand({ trigger }: { trigger: "bar" | "hero" }) {
 
   const go = (lessonId: string, ponto?: string) => {
     setOpen(false);
-    navigate({ to: "/aula/$lessonId", params: { lessonId }, search: { ponto } });
+    window.location.assign(`/manual/aula/${encodeURIComponent(lessonId)}${ponto ? `?ponto=${encodeURIComponent(ponto)}` : ""}`);
   };
 
   return (
