@@ -738,6 +738,9 @@ function ErrorKnowledgeManager({ accessToken }: { accessToken: string }) {
         }),
       });
       if (!response.ok) throw new Error((await response.text()) || "Não foi possível salvar as alterações.");
+      const previous = rows.find((row) => row.id === draft.id);
+      const retained = new Set(draft.media.map((item) => item.url));
+      await Promise.all((previous?.media || []).filter((item) => !retained.has(item.url)).map((item) => removeErrorMediaObject(item, token).catch(() => undefined)));
       setRows((current) => current.map((row) => row.id === draft.id ? { ...draft, status: "approved" } : row));
       setEditingId(null); setDraft(null); toast.success("Erro e materiais de apoio atualizados.");
     } catch (e) { toast.error(e instanceof Error ? e.message : "Falha ao salvar."); }
@@ -771,10 +774,15 @@ function ErrorKnowledgeManager({ accessToken }: { accessToken: string }) {
     finally { setSaving(false); if (fileRef.current) fileRef.current.value = ""; }
   };
 
-  const removeMedia = async (item: ErrorMedia) => {
-    if (!draft) return;
-    try { await removeErrorMediaObject(item, accessToken); } catch { /* metadata can still be removed */ }
+  const removeMedia = (item: ErrorMedia) => {
     setDraft((current) => current ? { ...current, media: current.media.filter((media) => media.url !== item.url) } : current);
+  };
+  const cancelEdit = async () => {
+    if (draft) {
+      const existing = new Set((rows.find((row) => row.id === draft.id)?.media || []).map((item) => item.url));
+      await Promise.all(draft.media.filter((item) => !existing.has(item.url)).map((item) => removeErrorMediaObject(item, accessToken).catch(() => undefined)));
+    }
+    setEditingId(null); setDraft(null);
   };
 
   const approved = rows.filter((row) => row.status === "approved").length;
@@ -833,7 +841,7 @@ function ErrorKnowledgeManager({ accessToken }: { accessToken: string }) {
                             {item.type === "image" ? <img src={item.url} alt={item.name} className="h-36 w-full rounded object-contain" />
                               : <div className="flex h-36 items-center justify-center rounded bg-muted"><Video className="size-10 text-muted-foreground" /></div>}
                             <div className="mt-2 flex items-center gap-2"><span className="min-w-0 flex-1 truncate text-xs">{item.name}</span>
-                              <Button type="button" variant="ghost" size="icon-sm" aria-label="Remover mídia" onClick={() => void removeMedia(item)}><X className="size-4" /></Button></div>
+                              <Button type="button" variant="ghost" size="icon-sm" aria-label="Remover mídia" onClick={() => removeMedia(item)}><X className="size-4" /></Button></div>
                             {item.type === "video" && <a href={item.url} target="_blank" rel="noreferrer" className="text-xs text-primary underline">Visualizar vídeo</a>}
                           </div>
                         ))}
@@ -841,7 +849,7 @@ function ErrorKnowledgeManager({ accessToken }: { accessToken: string }) {
                     ) : <p className="rounded-lg border border-dashed p-4 text-center text-xs text-muted-foreground">Nenhum arquivo anexado a este erro.</p>}
                   </div>
                   <div className="flex justify-end gap-2">
-                    <Button type="button" variant="outline" onClick={() => { setEditingId(null); setDraft(null); }}>Cancelar</Button>
+                    <Button type="button" variant="outline" onClick={() => void cancelEdit()}>Cancelar</Button>
                     <Button type="button" onClick={() => void save()} disabled={saving}>{saving ? "Salvando..." : "Salvar alterações"}</Button>
                   </div>
                 </div>
