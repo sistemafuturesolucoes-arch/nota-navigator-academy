@@ -661,6 +661,19 @@ type ErrorKnowledgeRow = {
   occurrence_count: number; last_seen_at: string; media: ErrorMedia[];
 };
 
+async function createErrorMediaSignedUrl(path: string, accessToken: string): Promise<string> {
+  const token = await getFreshAdminToken(accessToken);
+  const response = await fetch(SUPABASE_URL + "/storage/v1/object/sign/error-media/" + path, {
+    method: "POST",
+    headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    body: JSON.stringify({ expiresIn: 3600 }),
+  });
+  if (!response.ok) throw new Error((await response.text()) || "Não foi possível gerar o link seguro do arquivo.");
+  const data = await response.json() as { signedURL?: string };
+  if (!data.signedURL) throw new Error("O armazenamento não retornou o link seguro do arquivo.");
+  return data.signedURL.startsWith("http") ? data.signedURL : SUPABASE_URL + data.signedURL;
+}
+
 async function uploadErrorMedia(file: File, errorId: string, accessToken: string): Promise<ErrorMedia> {
   const isImage = file.type.startsWith("image/");
   const isVideo = file.type.startsWith("video/");
@@ -736,7 +749,7 @@ async function uploadErrorMedia(file: File, errorId: string, accessToken: string
   }
   return {
     type: isImage ? "image" : "video", name: file.name, path,
-    url: SUPABASE_URL + "/storage/v1/object/public/error-media/" + path,
+    url: await createErrorMediaSignedUrl(path, accessToken),
   };
 }
 
@@ -767,7 +780,16 @@ function ErrorKnowledgeManager({ accessToken }: { accessToken: string }) {
       );
       if (!response.ok) throw new Error("Não foi possível carregar a base de erros.");
       const data = await response.json() as ErrorKnowledgeRow[];
-      setRows(data.map((row) => ({ ...row, title: row.title || row.error_signature || "Erro sem título", description: row.description || row.error_message || "", media: Array.isArray(row.media) ? row.media : [] })));
+      const normalized = await Promise.all(data.map(async (row) => ({
+        ...row,
+        title: row.title || row.error_signature || "Erro sem título",
+        description: row.description || row.error_message || "",
+        media: await Promise.all((Array.isArray(row.media) ? row.media : []).map(async (item) => ({
+          ...item,
+          url: item.path ? await createErrorMediaSignedUrl(item.path, accessToken) : item.url,
+        }))),
+      })));
+      setRows(normalized);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Falha ao carregar os erros.");
     } finally { setLoading(false); }
@@ -790,7 +812,7 @@ function ErrorKnowledgeManager({ accessToken }: { accessToken: string }) {
         body: JSON.stringify({
           title: draft.title.trim(), description: draft.description,
           error_signature: draft.title.trim(), error_message: draft.description,
-          category: draft.category, solution: draft.solution, media: draft.media,
+          category: draft.category, solution: draft.solution, media: draft.media.map(({ url: _url, ...item }) => item),
           status: "approved", updated_at: new Date().toISOString(),
         }),
       });
