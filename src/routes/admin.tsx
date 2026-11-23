@@ -14,6 +14,9 @@ import {
   Sparkles,
   ShieldCheck,
   LogOut,
+  Pencil,
+  Video,
+  X,
   Trash2,
   Upload,
 } from "lucide-react";
@@ -651,112 +654,199 @@ function AdminWorkspace({ accessToken }: { accessToken: string }) {
 }
 
 
+type ErrorMedia = { type: "image" | "video"; url: string; name: string; path?: string };
 type ErrorKnowledgeRow = {
-  id: string;
-  error_signature: string;
-  error_message: string;
-  category: string;
-  solution: string;
-  status: "pending" | "approved" | "rejected";
-  occurrence_count: number;
-  last_seen_at: string;
+  id: string; error_signature: string; error_message: string; title: string; description: string;
+  category: string; solution: string; status: "pending" | "approved" | "rejected";
+  occurrence_count: number; last_seen_at: string; media: ErrorMedia[];
 };
+
+async function uploadErrorMedia(file: File, errorId: string, accessToken: string): Promise<ErrorMedia> {
+  const isImage = file.type.startsWith("image/");
+  const isVideo = file.type.startsWith("video/");
+  if (!isImage && !isVideo) throw new Error("Selecione uma imagem ou vídeo.");
+  if (file.size > 100 * 1024 * 1024) throw new Error("Cada arquivo deve ter no máximo 100 MB.");
+  const token = await getFreshAdminToken(accessToken);
+  const safeName = file.name.normalize("NFKD").replace(/[^a-zA-Z0-9._-]+/g, "-").slice(-90) || "arquivo";
+  const path = "errors/" + errorId + "/" + newId("media") + "-" + safeName;
+  const response = await fetch(SUPABASE_URL + "/storage/v1/object/error-media/" + path, {
+    method: "POST",
+    headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token, "Content-Type": file.type, "x-upsert": "false" },
+    body: file,
+  });
+  if (!response.ok) throw new Error((await response.text()) || "Não foi possível enviar o arquivo.");
+  return {
+    type: isImage ? "image" : "video",
+    name: file.name,
+    path,
+    url: SUPABASE_URL + "/storage/v1/object/public/error-media/" + path,
+  };
+}
+
+async function removeErrorMediaObject(media: ErrorMedia, accessToken: string) {
+  if (!media.path) return;
+  const token = await getFreshAdminToken(accessToken);
+  await fetch(SUPABASE_URL + "/storage/v1/object/error-media/" + media.path, {
+    method: "DELETE",
+    headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token },
+  });
+}
 
 function ErrorKnowledgeManager({ accessToken }: { accessToken: string }) {
   const [rows, setRows] = useState<ErrorKnowledgeRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [savingId, setSavingId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<ErrorKnowledgeRow | null>(null);
   const [error, setError] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const load = async () => {
-    setLoading(true);
-    setError("");
+    setLoading(true); setError("");
     try {
       const response = await fetch(
-        `${SUPABASE_URL}/rest/v1/error_knowledge?select=id,error_signature,error_message,category,solution,status,occurrence_count,last_seen_at&order=last_seen_at.desc&limit=200`,
-        { headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${accessToken}` } },
+        SUPABASE_URL + "/rest/v1/error_knowledge?select=id,error_signature,error_message,title,description,category,solution,status,occurrence_count,last_seen_at,media&order=last_seen_at.desc&limit=300",
+        { headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + accessToken } },
       );
       if (!response.ok) throw new Error("Não foi possível carregar a base de erros.");
-      setRows(await response.json() as ErrorKnowledgeRow[]);
+      const data = await response.json() as ErrorKnowledgeRow[];
+      setRows(data.map((row) => ({ ...row, title: row.title || row.error_signature || "Erro sem título", description: row.description || row.error_message || "", media: Array.isArray(row.media) ? row.media : [] })));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Falha ao carregar os erros.");
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
-
   useEffect(() => { void load(); }, [accessToken]);
 
-  const patchRow = (id: string, patch: Partial<ErrorKnowledgeRow>) => {
-    setRows((current) => current.map((row) => row.id === id ? { ...row, ...patch } : row));
+  const beginEdit = (row: ErrorKnowledgeRow) => {
+    setEditingId(row.id); setDraft({ ...row, media: [...(row.media || [])] });
   };
 
-  const save = async (row: ErrorKnowledgeRow, status: ErrorKnowledgeRow["status"]) => {
-    if (status === "approved" && !row.solution.trim()) {
-      toast.error("Revise e complete a solução antes de aprovar.");
-      return;
-    }
-    setSavingId(row.id);
+  const save = async () => {
+    if (!draft) return;
+    if (!draft.title.trim()) { toast.error("Informe um título para o erro."); return; }
+    setSaving(true);
     try {
-      const response = await fetch(
-        `${SUPABASE_URL}/rest/v1/error_knowledge?id=eq.${encodeURIComponent(row.id)}`,
-        {
-          method: "PATCH",
-          headers: {
-            apikey: SUPABASE_PUBLISHABLE_KEY,
-            Authorization: `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
-            Prefer: "return=minimal",
-          },
-          body: JSON.stringify({ solution: row.solution, status, updated_at: new Date().toISOString() }),
-        },
-      );
-      if (!response.ok) throw new Error((await response.text()) || "Não foi possível salvar a solução.");
-      patchRow(row.id, { status });
-      toast.success(status === "approved" ? "Solução aprovada. O assistente poderá reutilizá-la sem chamar a IA." : "Registro atualizado.");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Falha ao salvar.");
-    } finally {
-      setSavingId(null);
-    }
+      const token = await getFreshAdminToken(accessToken);
+      const response = await fetch(SUPABASE_URL + "/rest/v1/error_knowledge?id=eq." + encodeURIComponent(draft.id), {
+        method: "PATCH",
+        headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token, "Content-Type": "application/json", Prefer: "return=minimal" },
+        body: JSON.stringify({
+          title: draft.title.trim(), description: draft.description,
+          error_signature: draft.title.trim(), error_message: draft.description,
+          category: draft.category, solution: draft.solution, media: draft.media,
+          status: "approved", updated_at: new Date().toISOString(),
+        }),
+      });
+      if (!response.ok) throw new Error((await response.text()) || "Não foi possível salvar as alterações.");
+      setRows((current) => current.map((row) => row.id === draft.id ? { ...draft, status: "approved" } : row));
+      setEditingId(null); setDraft(null); toast.success("Erro e materiais de apoio atualizados.");
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Falha ao salvar."); }
+    finally { setSaving(false); }
   };
 
-  const pending = rows.filter((row) => row.status === "pending").length;
-  const approved = rows.filter((row) => row.status === "approved").length;
+  const deleteRow = async (row: ErrorKnowledgeRow) => {
+    if (!window.confirm("Excluir definitivamente o erro \"" + (row.title || row.error_signature) + "\" e seus materiais?")) return;
+    try {
+      const token = await getFreshAdminToken(accessToken);
+      const response = await fetch(SUPABASE_URL + "/rest/v1/error_knowledge?id=eq." + encodeURIComponent(row.id), {
+        method: "DELETE", headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token },
+      });
+      if (!response.ok) throw new Error((await response.text()) || "Não foi possível excluir o erro.");
+      await Promise.all((row.media || []).map((item) => removeErrorMediaObject(item, token).catch(() => undefined)));
+      setRows((current) => current.filter((item) => item.id !== row.id));
+      if (editingId === row.id) { setEditingId(null); setDraft(null); }
+      toast.success("Erro excluído.");
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Falha ao excluir."); }
+  };
 
+  const addFiles = async (files: FileList | null) => {
+    if (!draft || !files?.length) return;
+    setSaving(true);
+    try {
+      const uploaded: ErrorMedia[] = [];
+      for (const file of Array.from(files)) uploaded.push(await uploadErrorMedia(file, draft.id, accessToken));
+      setDraft((current) => current ? { ...current, media: [...current.media, ...uploaded] } : current);
+      toast.success(uploaded.length + " arquivo(s) enviado(s). Clique em Salvar alterações para vincular ao erro.");
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Falha ao enviar os arquivos."); }
+    finally { setSaving(false); if (fileRef.current) fileRef.current.value = ""; }
+  };
+
+  const removeMedia = async (item: ErrorMedia) => {
+    if (!draft) return;
+    try { await removeErrorMediaObject(item, accessToken); } catch { /* metadata can still be removed */ }
+    setDraft((current) => current ? { ...current, media: current.media.filter((media) => media.url !== item.url) } : current);
+  };
+
+  const approved = rows.filter((row) => row.status === "approved").length;
   return (
-    <section className="space-y-5">
+    <section className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <div className="flex-1">
-          <h2 className="text-xl font-bold">Banco de conhecimento de erros</h2>
-          <p className="text-sm text-muted-foreground">Revise as respostas criadas pela IA. Só soluções aprovadas são usadas automaticamente.</p>
+        <div className="min-w-0 flex-1">
+          <h2 className="text-xl font-bold">Banco de erros e soluções</h2>
+          <p className="text-sm text-muted-foreground">Edite o diagnóstico e anexe imagens ou vídeos que a IA poderá enviar ao usuário.</p>
         </div>
-        <div className="rounded-lg bg-secondary px-3 py-2 text-sm"><b>{pending}</b> pendentes</div>
-        <div className="rounded-lg bg-secondary px-3 py-2 text-sm"><b>{approved}</b> aprovados</div>
+        <div className="rounded-lg bg-secondary px-3 py-2 text-sm"><b>{rows.length}</b> erros</div>
+        <div className="rounded-lg bg-secondary px-3 py-2 text-sm"><b>{approved}</b> ativos</div>
         <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}><RotateCcw /> Atualizar</Button>
       </div>
       {error && <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
-      {loading ? <p className="py-10 text-center text-sm text-muted-foreground">Carregando base de conhecimento...</p>
-        : rows.length === 0 ? <div className="rounded-xl border border-dashed p-10 text-center text-sm text-muted-foreground">Ainda não há erros registrados. Quando alguém enviar um print ou descrever um erro, ele aparecerá aqui para revisão.</div>
-        : <div className="space-y-4">
+      {loading ? <p className="py-10 text-center text-sm text-muted-foreground">Carregando banco de erros...</p>
+        : rows.length === 0 ? <div className="rounded-xl border border-dashed p-10 text-center text-sm text-muted-foreground">Ainda não há erros registrados.</div>
+        : <div className="overflow-hidden rounded-xl border bg-card">
           {rows.map((row) => (
-            <article key={row.id} className="space-y-3 rounded-xl border bg-card p-4 shadow-card">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-semibold">{row.category === "fiscal" ? "Erro fiscal" : "Erro do sistema"}</span>
-                <span className="rounded-full bg-secondary px-2 py-1 text-xs">{row.status === "pending" ? "Aguardando revisão" : row.status === "approved" ? "Aprovado" : "Rejeitado"}</span>
-                <span className="ml-auto text-xs text-muted-foreground">{row.occurrence_count} ocorrência(s)</span>
+            <div key={row.id} className="border-b last:border-b-0">
+              <div className="flex items-center gap-3 px-3 py-3 sm:px-4">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">{row.title || row.error_signature}</p>
+                  <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{row.description || row.error_message}</p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">{row.category === "fiscal" ? "Fiscal" : "Geral"} · {row.occurrence_count} ocorrência(s) · {(row.media || []).length} mídia(s)</p>
+                </div>
+                <Button type="button" variant="ghost" size="icon" aria-label="Editar erro" title="Editar erro" onClick={() => editingId === row.id ? (setEditingId(null), setDraft(null)) : beginEdit(row)}>
+                  {editingId === row.id ? <X className="size-4" /> : <Pencil className="size-4" />}
+                </Button>
+                <Button type="button" variant="ghost" size="icon" aria-label="Excluir erro" title="Excluir erro" onClick={() => void deleteRow(row)}>
+                  <Trash2 className="size-4 text-destructive" />
+                </Button>
               </div>
-              <p className="text-sm text-muted-foreground">Identificação: {row.error_signature}</p>
-              {row.error_message && <p className="rounded-lg bg-secondary/60 p-3 text-sm">{row.error_message}</p>}
-              <div className="space-y-1.5">
-                <Label htmlFor={`solution-${row.id}`}>Solução que o assistente poderá reutilizar</Label>
-                <Textarea id={`solution-${row.id}`} rows={5} value={row.solution} onChange={(event) => patchRow(row.id, { solution: event.target.value })} />
-              </div>
-              <div className="flex flex-wrap justify-end gap-2">
-                <Button variant="outline" size="sm" onClick={() => void save(row, "rejected")} disabled={savingId === row.id}>Rejeitar</Button>
-                <Button size="sm" onClick={() => void save(row, "approved")} disabled={savingId === row.id}>{savingId === row.id ? "Salvando..." : row.status === "approved" ? "Salvar solução" : "Aprovar e ativar"}</Button>
-              </div>
-            </article>
+              {editingId === row.id && draft && (
+                <div className="space-y-4 border-t bg-muted/30 p-4">
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="space-y-1.5"><Label htmlFor={"error-title-" + row.id}>Título do erro</Label>
+                      <Input id={"error-title-" + row.id} value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} /></div>
+                    <div className="space-y-1.5"><Label>Categoria</Label>
+                      <Input value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })} /></div>
+                  </div>
+                  <div className="space-y-1.5"><Label htmlFor={"error-description-" + row.id}>Descrição / mensagem apresentada</Label>
+                    <Textarea id={"error-description-" + row.id} rows={3} value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></div>
+                  <div className="space-y-1.5"><Label htmlFor={"error-solution-" + row.id}>Orientação e passo a passo</Label>
+                    <Textarea id={"error-solution-" + row.id} rows={6} value={draft.solution} onChange={(event) => setDraft({ ...draft, solution: event.target.value })} /></div>
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2"><Label>Imagens e vídeos de apoio</Label>
+                      <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" multiple className="hidden" onChange={(event) => void addFiles(event.target.files)} />
+                      <Button type="button" size="sm" variant="outline" disabled={saving} onClick={() => fileRef.current?.click()}><Upload className="size-4" /> Enviar imagem ou vídeo</Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">PNG, JPG, WEBP ou GIF; MP4, WEBM ou MOV. Até 100 MB por arquivo.</p>
+                    {(draft.media || []).length > 0 ? (
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        {draft.media.map((item) => (
+                          <div key={item.url} className="relative overflow-hidden rounded-lg border bg-background p-2">
+                            {item.type === "image" ? <img src={item.url} alt={item.name} className="h-36 w-full rounded object-contain" />
+                              : <div className="flex h-36 items-center justify-center rounded bg-muted"><Video className="size-10 text-muted-foreground" /></div>}
+                            <div className="mt-2 flex items-center gap-2"><span className="min-w-0 flex-1 truncate text-xs">{item.name}</span>
+                              <Button type="button" variant="ghost" size="icon-sm" aria-label="Remover mídia" onClick={() => void removeMedia(item)}><X className="size-4" /></Button></div>
+                            {item.type === "video" && <a href={item.url} target="_blank" rel="noreferrer" className="text-xs text-primary underline">Visualizar vídeo</a>}
+                          </div>
+                        ))}
+                      </div>
+                    ) : <p className="rounded-lg border border-dashed p-4 text-center text-xs text-muted-foreground">Nenhum arquivo anexado a este erro.</p>}
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button type="button" variant="outline" onClick={() => { setEditingId(null); setDraft(null); }}>Cancelar</Button>
+                    <Button type="button" onClick={() => void save()} disabled={saving}>{saving ? "Salvando..." : "Salvar alterações"}</Button>
+                  </div>
+                </div>
+              )}
+            </div>
           ))}
         </div>}
     </section>
