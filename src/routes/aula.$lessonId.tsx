@@ -82,7 +82,7 @@ function LessonPage() {
   // pelo sessionStorage, mantendo o aluno dentro da tela cheia.
   const navigateToLesson = (id: string) => {
     window.sessionStorage.setItem("manual-fullscreen", "1");
-    window.location.assign(`${import.meta.env.BASE_URL}aula/${encodeURIComponent(id)}`);
+    window.location.assign(`/manual/aula/${encodeURIComponent(id)}`);
   };
 
   const [mode, setMode] = useState<ScreenMode>("explore");
