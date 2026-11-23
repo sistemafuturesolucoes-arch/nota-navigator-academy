@@ -108,27 +108,43 @@ function AssistantVisual({ lessonTitle, screenshot }: { lessonTitle: string; scr
 }
 
 function AssistantResponse({ text, course }: { text: string; course: ReturnType<typeof useCourse> }) {
-  const token = /\[VISUAL:([^:\]]+):([^\]]+)\]/g;
-  const parts: Array<{ type: "text"; value: string; key: string } | { type: "visual"; lessonId: string; screenshotId: string; key: string }> = [];
+  type Part =
+    | { type: "text"; value: string; key: string }
+    | { type: "visual"; lessonId: string; screenshotId: string; key: string }
+    | { type: "media"; mediaType: "image" | "video"; url: string; key: string };
+  const token = /\[VISUAL:([^:\]]+):([^\]]+)\]|\[ERROR_MEDIA_(IMAGE|VIDEO):([^\]]+)\]/g;
+  const parts: Part[] = [];
   let cursor = 0;
   let match: RegExpExecArray | null;
   while ((match = token.exec(text)) !== null) {
-    if (match.index > cursor) parts.push({ type: "text", value: text.slice(cursor, match.index), key: `text-${cursor}` });
-    parts.push({ type: "visual", lessonId: match[1]!, screenshotId: match[2]!, key: `visual-${match.index}` });
+    if (match.index > cursor) parts.push({ type: "text", value: text.slice(cursor, match.index), key: "text-" + cursor });
+    if (match[1] && match[2]) {
+      parts.push({ type: "visual", lessonId: match[1], screenshotId: match[2], key: "visual-" + match.index });
+    } else if (match[3] && match[4]) {
+      const url = match[4];
+      if (url.startsWith("https://itbppoailqkuxajesgys.supabase.co/storage/v1/object/public/error-media/")) {
+        parts.push({ type: "media", mediaType: match[3] === "IMAGE" ? "image" : "video", url, key: "media-" + match.index });
+      }
+    }
     cursor = match.index + match[0].length;
   }
-  if (cursor < text.length) parts.push({ type: "text", value: text.slice(cursor), key: `text-${cursor}` });
+  if (cursor < text.length) parts.push({ type: "text", value: text.slice(cursor), key: "text-" + cursor });
   if (parts.length === 0) return <MessageResponse>{text}</MessageResponse>;
 
   return (
     <div className="space-y-3">
       {parts.map((part) => {
         if (part.type === "text") return part.value.trim() ? <MessageResponse key={part.key}>{part.value}</MessageResponse> : null;
+        if (part.type === "media") {
+          return part.mediaType === "image"
+            ? <figure key={part.key} className="overflow-hidden rounded-xl border bg-card p-2"><img src={part.url} alt="Imagem de apoio para resolver o erro" loading="lazy" className="max-h-[520px] w-full rounded-lg object-contain" /></figure>
+            : <div key={part.key} className="overflow-hidden rounded-xl border bg-card p-2"><video src={part.url} controls preload="metadata" className="max-h-[520px] w-full rounded-lg" aria-label="Vídeo de apoio para resolver o erro" /></div>;
+        }
         const lesson = course.lessons[part.lessonId];
         const screenshots = lesson?.screenshots?.length
           ? lesson.screenshots
           : lesson?.image
-            ? [{ id: `screen-${lesson.id}`, image: lesson.image, caption: "", hotspots: lesson.hotspots }]
+            ? [{ id: "screen-" + lesson.id, image: lesson.image, caption: "", hotspots: lesson.hotspots }]
             : [];
         const screenshot = screenshots.find((item) => item.id === part.screenshotId);
         if (!lesson || !screenshot?.image) return null;
