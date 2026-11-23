@@ -128,7 +128,13 @@ type DbLesson = {
 };
 
 function authHeaders(accessToken?: string) {
-  return { apikey: SUPABASE_KEY, Authorization: `Bearer ${accessToken || SUPABASE_KEY}`, "Content-Type": "application/json" };
+  return {
+    apikey: SUPABASE_KEY,
+    // A chave publishable vai no header apikey; ela não é um JWT.
+    // Sem sessão administrativa, não envie Authorization para o PostgREST usar a role anon.
+    ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    "Content-Type": "application/json",
+  };
 }
 
 async function rest(path: string, accessToken?: string, init: RequestInit = {}) {
