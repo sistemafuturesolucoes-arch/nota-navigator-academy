@@ -126,7 +126,7 @@ async function getFreshAdminToken(fallback: string, forceRefresh = false): Promi
     ...refreshed,
     expires_at: Date.now() + Math.max(60, Number(refreshed.expires_in) || 3600) * 1000,
   };
-  localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(next));
+  persistAdminSession(next);
   return next.access_token;
 }
 
@@ -275,7 +275,7 @@ function AdminPage() {
   useEffect(() => {
     let active = true;
     const restoreSession = async () => {
-      const raw = localStorage.getItem(ADMIN_SESSION_KEY);
+      const raw = readAdminSession();
       if (!raw) return;
       try {
         let saved = JSON.parse(raw) as AdminSession;
