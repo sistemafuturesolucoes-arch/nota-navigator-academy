@@ -37,6 +37,9 @@ import { useCourse } from "@/lib/course/store";
 
 const CHAT_KEY = "future-manual-chat-v1";
 const CHAT_ID = "assistente-future";
+const MANUAL_SUPABASE_URL = "https://itbppoailqkuxajesgys.supabase.co";
+const MANUAL_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_J3-cgRigKn2QardNRaOFRQ_Jja51yof";
+const AI_ASSISTANT_URL = `${MANUAL_SUPABASE_URL}/functions/v1/ai-assistant`;
 
 const SUGGESTIONS = [
   "Quero consultar os dados cadastrais de uma empresa. Me peça o CNPJ.",
@@ -200,7 +203,12 @@ export function AssistantChat({ initialMessages, tela }: { initialMessages: UIMe
   const { messages, sendMessage, status, error, stop: stopChat, setMessages, clearError } = useChat({
     id: CHAT_ID,
     messages: initialMessages,
-    transport: new DefaultChatTransport({ api: `${import.meta.env.BASE_URL}api/chat` }),
+    transport: new DefaultChatTransport({
+      // A rota /manual/api/chat caía no fallback SPA da Vercel e devolvia HTML.
+      // Chamar a Edge Function diretamente evita esse rewrite e mantém Gemini/segredos no servidor.
+      api: AI_ASSISTANT_URL,
+      headers: { apikey: MANUAL_SUPABASE_PUBLISHABLE_KEY },
+    }),
   });
 
   const busy = status === "submitted" || status === "streaming";
