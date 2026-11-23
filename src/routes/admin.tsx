@@ -666,19 +666,76 @@ async function uploadErrorMedia(file: File, errorId: string, accessToken: string
   const isVideo = file.type.startsWith("video/");
   if (!isImage && !isVideo) throw new Error("Selecione uma imagem ou vídeo.");
   if (file.size > 100 * 1024 * 1024) throw new Error("Cada arquivo deve ter no máximo 100 MB.");
-  const token = await getFreshAdminToken(accessToken);
   const safeName = file.name.normalize("NFKD").replace(/[^a-zA-Z0-9._-]+/g, "-").slice(-90) || "arquivo";
   const path = "errors/" + errorId + "/" + newId("media") + "-" + safeName;
-  const response = await fetch(SUPABASE_URL + "/storage/v1/object/error-media/" + path, {
-    method: "POST",
-    headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token, "Content-Type": file.type, "x-upsert": "false" },
-    body: file,
-  });
-  if (!response.ok) throw new Error((await response.text()) || "Não foi possível enviar o arquivo.");
+  const bucketEndpoint = SUPABASE_URL + "/storage/v1/object/error-media/";
+  if (file.size > 6 * 1024 * 1024) {
+    const endpoint = "https://itbppoailqkuxajesgys.storage.supabase.co/storage/v1/upload/resumable";
+    const metadata = [
+      "bucketName " + encodeMetadata("error-media"),
+      "objectName " + encodeMetadata(path),
+      "contentType " + encodeMetadata(file.type),
+      "cacheControl " + encodeMetadata("3600"),
+    ].join(",");
+    const createUpload = async (forceRefresh = false) => {
+      const token = await getFreshAdminToken(accessToken, forceRefresh);
+      return fetch(endpoint, {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token,
+          "Tus-Resumable": "1.0.0", "Upload-Length": String(file.size),
+          "Upload-Metadata": metadata, "x-upsert": "false",
+        },
+      });
+    };
+    let created = await createUpload();
+    if (!created.ok) {
+      const detail = await created.text().catch(() => "");
+      if (isExpiredJwtError(detail)) created = await createUpload(true);
+      else throw new Error(detail || "Não foi possível iniciar o envio do arquivo.");
+    }
+    if (!created.ok) throw new Error((await created.text().catch(() => "")) || "Não foi possível iniciar o envio do arquivo.");
+    const location = created.headers.get("Location");
+    if (!location) throw new Error("O armazenamento não retornou o endereço de envio.");
+    const uploadUrl = new URL(location, endpoint).toString();
+    const chunkSize = 6 * 1024 * 1024;
+    let offset = 0;
+    while (offset < file.size) {
+      const chunk = file.slice(offset, Math.min(offset + chunkSize, file.size));
+      const sendChunk = async (forceRefresh = false) => {
+        const token = await getFreshAdminToken(accessToken, forceRefresh);
+        return fetch(uploadUrl, {
+          method: "PATCH",
+          headers: {
+            apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token,
+            "Tus-Resumable": "1.0.0", "Upload-Offset": String(offset),
+            "Content-Type": "application/offset+octet-stream",
+          },
+          body: chunk,
+        });
+      };
+      let response = await sendChunk();
+      if (!response.ok) {
+        const detail = await response.text().catch(() => "");
+        if (isExpiredJwtError(detail)) response = await sendChunk(true);
+        else throw new Error(detail || "O envio do arquivo foi interrompido.");
+      }
+      if (!response.ok) throw new Error((await response.text().catch(() => "")) || "O envio do arquivo foi interrompido.");
+      const nextOffset = Number(response.headers.get("Upload-Offset"));
+      if (!Number.isFinite(nextOffset) || nextOffset <= offset) throw new Error("O armazenamento não confirmou o progresso do arquivo.");
+      offset = nextOffset;
+    }
+  } else {
+    const token = await getFreshAdminToken(accessToken);
+    const response = await fetch(bucketEndpoint + path, {
+      method: "POST",
+      headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: "Bearer " + token, "Content-Type": file.type, "x-upsert": "false" },
+      body: file,
+    });
+    if (!response.ok) throw new Error((await response.text()) || "Não foi possível enviar o arquivo.");
+  }
   return {
-    type: isImage ? "image" : "video",
-    name: file.name,
-    path,
+    type: isImage ? "image" : "video", name: file.name, path,
     url: SUPABASE_URL + "/storage/v1/object/public/error-media/" + path,
   };
 }
