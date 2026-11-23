@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   ArrowLeft,
   ArrowRight,
@@ -53,7 +53,6 @@ const MODES: { id: ScreenMode; label: string; icon: typeof Eye; hint: string }[]
 function LessonPage() {
   const { lessonId } = Route.useParams();
   const { ponto } = Route.useSearch();
-  const navigate = useNavigate();
   const course = Route.useLoaderData();
   const done = new Set(useProgress());
   const lesson = course.lessons[lessonId];
@@ -71,6 +70,19 @@ function LessonPage() {
     : undefined;
   const firstLessonOf = (module: (typeof course.modules)[number] | undefined) =>
     module?.lessonIds.find((id) => Boolean(course.lessons[id]));
+
+  const moduleLessons = mod
+    ? mod.lessonIds.map((id) => course.lessons[id]).filter((item): item is NonNullable<typeof item> => Boolean(item))
+    : [];
+  const moduleLessonIndex = moduleLessons.findIndex((item) => item.id === lessonId);
+
+  // Em /manual no CRM, a navegação SPA pode perder o contexto do proxy durante
+  // a troca de rota. Recarregue a rota publicada e restaure a camada imersiva
+  // pelo sessionStorage, mantendo o aluno dentro da tela cheia.
+  const navigateToLesson = (id: string) => {
+    window.sessionStorage.setItem("manual-fullscreen", "1");
+    window.location.assign(`${import.meta.env.BASE_URL}aula/${encodeURIComponent(id)}`);
+  };
 
   const [mode, setMode] = useState<ScreenMode>("explore");
   const [activeId, setActiveId] = useState<string | null>(ponto ?? null);
@@ -309,8 +321,7 @@ function LessonPage() {
                       if (target) {
                         stop();
                         setAutoNarrate(false);
-                        window.sessionStorage.setItem("manual-fullscreen", "1");
-                        navigate({ to: "/aula/$lessonId", params: { lessonId: target }, search: {} });
+                        navigateToLesson(target);
                       }
                     }}
                   >
@@ -375,15 +386,14 @@ function LessonPage() {
                       if (hasPreviousScreenshot) {
                         setActiveScreenshotId(screenshots[activeScreenshotIndex - 1].id);
                       } else if (prev) {
-                        window.sessionStorage.setItem("manual-fullscreen", "1");
-                        navigate({ to: "/aula/$lessonId", params: { lessonId: prev.id }, search: {} });
+                        navigateToLesson(prev.id);
                       }
                     }}
                   >
                     <ArrowLeft className="size-4" />
                   </Button>
                   <span className="min-w-12 text-center text-[11px] font-medium tabular-nums text-muted-foreground">
-                    {activeScreenshotIndex + 1}/{screenshots.length}
+                    Aula {Math.max(0, moduleLessonIndex) + 1}/{moduleLessons.length} · Tela {activeScreenshotIndex + 1}/{screenshots.length}
                   </span>
                   <Button
                     type="button"
@@ -402,8 +412,7 @@ function LessonPage() {
                         setActiveScreenshotId(screenshots[activeScreenshotIndex + 1].id);
                       } else if (next) {
                         toggleLessonDone(lesson.id, true);
-                        window.sessionStorage.setItem("manual-fullscreen", "1");
-                        navigate({ to: "/aula/$lessonId", params: { lessonId: next.id }, search: {} });
+                        navigateToLesson(next.id);
                       }
                     }}
                   >
