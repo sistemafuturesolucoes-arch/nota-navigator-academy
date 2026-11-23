@@ -1,5 +1,19 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    {
+      "source": "/manual/assets/:path*",
+      "destination": "/assets/:path*"
+    },
+    {
+      "source": "/manual/logo-future.png",
+      "destination": "/logo-future.png"
+    },
+    {
+      "source": "/manual/favicon.png",
+      "destination": "/favicon.png"
+    }
+  ],
   "redirects": [
     {
       "source": "/",
