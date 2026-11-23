@@ -6,7 +6,7 @@ import { ModuleIcon } from "@/components/manual/ModuleIcon";
 import { SearchCommand } from "@/components/manual/SearchCommand";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { orderedLessons, useCourse, useProgress } from "@/lib/course/store";
+import { loadCourseFromSupabase, orderedLessons, useProgress } from "@/lib/course/store";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -25,6 +25,7 @@ export const Route = createFileRoute("/")({
       { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
+  loader: () => loadCourseFromSupabase(),
   component: Home,
 });
 
@@ -37,7 +38,7 @@ const FEATURES = [
 
 function Home() {
   const [heroImageUnavailable, setHeroImageUnavailable] = useState(false);
-  const course = useCourse();
+  const course = Route.useLoaderData();
   const done = new Set(useProgress());
   const lessons = orderedLessons(course);
   const navigate = useNavigate();
