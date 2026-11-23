@@ -369,50 +369,54 @@ function LessonPage() {
                   <p className="truncate text-sm font-semibold text-foreground">{lesson.title}</p>
                   <p className="truncate text-[11px] text-muted-foreground">{mod?.title ? `Módulo: ${mod.title}` : "Manual Interativo"}</p>
                 </div>
-                <div className="absolute bottom-3 left-1/2 z-[10000] flex -translate-x-1/2 items-center gap-2 rounded-full border border-border/70 bg-card/90 p-1.5 shadow-lg backdrop-blur-sm">
+                <nav aria-label="Navegação das aulas" className="fixed bottom-4 left-1/2 z-[2147483647] flex -translate-x-1/2 items-center gap-2 rounded-full border border-border/70 bg-card p-2 shadow-2xl" style={{ pointerEvents: "auto" }}>
                   <Button
-                    type="button"
+                    asChild
                     variant="outline"
                     size="sm"
-                    className="size-8 rounded-full p-0"
+                    className="size-10 rounded-full p-0"
                     disabled={!prev}
                     title={prev ? `Aula anterior: ${prev.title}` : "Início do curso"}
-                    aria-label="Ir para a aula anterior"
-                    onClick={() => {
-                      if (!prev) return;
-                      stop();
-                      setAutoNarrate(false);
-                      setActiveId(null);
-                      setMode("explore");
-                      navigateToLesson(prev.id);
-                    }}
                   >
-                    <ArrowLeft className="size-4" />
+                    <a
+                      href={prev ? `/manual/aula/${encodeURIComponent(prev.id)}` : undefined}
+                      aria-label="Ir para a aula anterior"
+                      onClick={(event) => {
+                        if (!prev) { event.preventDefault(); return; }
+                        window.sessionStorage.setItem("manual-fullscreen", "1");
+                        stop();
+                        setAutoNarrate(false);
+                      }}
+                    >
+                      <ArrowLeft className="size-4" />
+                    </a>
                   </Button>
-                  <span className="min-w-12 text-center text-[11px] font-medium tabular-nums text-muted-foreground">
+                  <span className="min-w-16 text-center text-xs font-semibold tabular-nums text-foreground">
                     Aula {Math.max(0, moduleLessonIndex) + 1}/{moduleLessons.length}
                   </span>
                   <Button
-                    type="button"
+                    asChild
                     variant="default"
                     size="sm"
-                    className="size-8 rounded-full p-0"
+                    className="size-10 rounded-full p-0"
                     disabled={!next}
                     title={next ? `Próxima aula: ${next.title}` : "Fim do curso"}
-                    aria-label="Ir para a próxima aula"
-                    onClick={() => {
-                      if (!next) return;
-                      stop();
-                      setAutoNarrate(false);
-                      setActiveId(null);
-                      setMode("explore");
-                      toggleLessonDone(lesson.id, true);
-                      navigateToLesson(next.id);
-                    }}
                   >
-                    <ArrowRight className="size-4" />
+                    <a
+                      href={next ? `/manual/aula/${encodeURIComponent(next.id)}` : undefined}
+                      aria-label="Ir para a próxima aula"
+                      onClick={(event) => {
+                        if (!next) { event.preventDefault(); return; }
+                        window.sessionStorage.setItem("manual-fullscreen", "1");
+                        stop();
+                        setAutoNarrate(false);
+                        toggleLessonDone(lesson.id, true);
+                      }}
+                    >
+                      <ArrowRight className="size-4" />
+                    </a>
                   </Button>
-                </div>
+                </nav>
                 </>
               )}
             </div>
