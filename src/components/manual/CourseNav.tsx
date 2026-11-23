@@ -33,6 +33,7 @@ export function CourseNav({ activeLessonId }: { activeLessonId?: string }) {
                       to="/aula/$lessonId"
                       params={{ lessonId: id }}
                       search={{}}
+                      reloadDocument
                       className={cn(
                         "flex items-center gap-2.5 rounded-lg px-2 py-2 text-sm transition-colors",
                         isActive
