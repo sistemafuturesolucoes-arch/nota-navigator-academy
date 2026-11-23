@@ -303,7 +303,7 @@ function LessonPage() {
                       if (hasPreviousScreenshot) {
                         setActiveScreenshotId(screenshots[activeScreenshotIndex - 1].id);
                       } else if (prev) {
-                        navigate({ to: "/aula/$lessonId", params: { lessonId: prev.id }, search: {} });
+                        window.location.assign(`/manual/aula/${encodeURIComponent(prev.id)}`);
                       }
                     }}
                   >
@@ -329,7 +329,7 @@ function LessonPage() {
                         setActiveScreenshotId(screenshots[activeScreenshotIndex + 1].id);
                       } else if (next) {
                         toggleLessonDone(lesson.id, true);
-                        navigate({ to: "/aula/$lessonId", params: { lessonId: next.id }, search: {} });
+                        window.location.assign(`/manual/aula/${encodeURIComponent(next.id)}`);
                       }
                     }}
                   >
@@ -405,7 +405,7 @@ function LessonPage() {
         <div className="flex items-center justify-between gap-3 border-t pt-5">
           {prev ? (
             <Button variant="outline" asChild>
-              <Link to="/aula/$lessonId" params={{ lessonId: prev.id }} search={{}}>
+              <Link to="/aula/$lessonId" params={{ lessonId: prev.id }} search={{}} reloadDocument>
                 <ArrowLeft /> <span className="max-w-40 truncate">{prev.title}</span>
               </Link>
             </Button>
