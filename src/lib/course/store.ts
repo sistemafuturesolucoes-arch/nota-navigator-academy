@@ -200,10 +200,24 @@ function fromDatabase(modules: DbModule[], rows: DbLesson[]): Course {
   };
 }
 
-export async function loadCourseFromSupabase(accessToken?: string): Promise<Course> {
+export async function publicRest<T>(path: string): Promise<T> {
+  // O catálogo publicado deve sempre ser lido como visitante (role anon).
+  // Não reutilize tokens administrativos salvos no navegador: um refresh expirado
+  // não pode impedir que os alunos vejam as aulas públicas.
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(detail || `Falha ao carregar conteúdo publicado (HTTP ${response.status}).`);
+  }
+  return await response.json() as T;
+}
+
+export async function loadCourseFromSupabase(_accessToken?: string): Promise<Course> {
   const [modules, lessons] = await Promise.all([
-    rest("course_modules?select=id,title,description,icon,position,is_published&order=position.asc", accessToken) as Promise<DbModule[]>,
-    rest("course_lessons?select=id,module_id,title,summary,path,image_url,video_url,video_path,content,hotspots,screenshots,position,is_published&order=position.asc", accessToken) as Promise<DbLesson[]>,
+    publicRest<DbModule[]>("course_modules?select=id,title,description,icon,position,is_published&is_published=eq.true&order=position.asc"),
+    publicRest<DbLesson[]>("course_lessons?select=id,module_id,title,summary,path,image_url,video_url,video_path,content,hotspots,screenshots,position,is_published&is_published=eq.true&order=position.asc"),
   ]);
   if (!modules?.length) return courseStore.read();
   const course = fromDatabase(modules, lessons ?? []);
