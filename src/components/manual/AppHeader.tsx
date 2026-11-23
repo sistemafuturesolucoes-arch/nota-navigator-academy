@@ -10,7 +10,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 
-const logo = "/logo-future.png";
+const logo = "/manual/logo-future.png";
 const SUPABASE_URL = "https://itbppoailqkuxajesgys.supabase.co";
 const ADMIN_AUTH_URL = `${SUPABASE_URL}/functions/v1/admin-auth`;
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_J3-cgRigKn2QardNRaOFRQ_Jja51yof";
