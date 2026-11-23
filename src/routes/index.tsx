@@ -69,7 +69,7 @@ function Home() {
             <div className="mt-6 flex flex-wrap gap-3">
               {nextLesson && (
                 <Button variant="lime" size="xl" asChild>
-                  <Link to="/aula/$lessonId" params={{ lessonId: nextLesson.id }} search={{}}>
+                  <Link to="/aula/$lessonId" params={{ lessonId: nextLesson.id }} search={{}} reloadDocument>
                     {completed > 0 ? "Continuar de onde parei" : "Começar o curso"} <ArrowRight />
                   </Link>
                 </Button>
@@ -186,6 +186,7 @@ function Home() {
                             to="/aula/$lessonId"
                             params={{ lessonId: l.id }}
                             search={{}}
+                            reloadDocument
                             className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-secondary"
                           >
                             <CheckCircle2
