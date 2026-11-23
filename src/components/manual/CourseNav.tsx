@@ -1,13 +1,13 @@
 import { Link } from "@tanstack/react-router";
 import { CheckCircle2, Circle } from "lucide-react";
 
-import { useCourse, useProgress } from "@/lib/course/store";
+import { useProgress } from "@/lib/course/store";
+import type { Course } from "@/lib/course/types";
 import { cn } from "@/lib/utils";
 
 import { ModuleIcon } from "./ModuleIcon";
 
-export function CourseNav({ activeLessonId }: { activeLessonId?: string }) {
-  const course = useCourse();
+export function CourseNav({ activeLessonId, course }: { activeLessonId?: string; course: Course }) {
   const done = new Set(useProgress());
   return (
     <nav className="space-y-6">
