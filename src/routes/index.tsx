@@ -2,7 +2,6 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { ArrowRight, Bot, Camera, CheckCircle2, Clock3, Play, ScanSearch, Volume2 } from "lucide-react";
 import { useState } from "react";
 
-import dashboard from "@/assets/prints/dashboard.png.asset.json";
 import { ModuleIcon } from "@/components/manual/ModuleIcon";
 import { SearchCommand } from "@/components/manual/SearchCommand";
 import { Button } from "@/components/ui/button";
@@ -88,7 +87,7 @@ function Home() {
                   <p className="max-w-sm text-sm text-ink-muted">O arquivo da tela ainda não está incluído na publicação independente.</p>
                 </div>
               ) : (
-                <img src={course.lessons.dashboard?.image || dashboard.url} alt="Painel do Emissor Future" onError={() => setHeroImageUnavailable(true)} className="block w-full" />
+                <img src={course.lessons.dashboard?.image || "https://itbppoailqkuxajesgys.supabase.co/storage/v1/object/public/course-images/original/dashboard.png"} alt="Painel do Emissor Future" onError={() => setHeroImageUnavailable(true)} className="block w-full" />
               )}
               {[
                 { x: 6.4, y: 16.4, w: 22.5, h: 10.8, n: 1 },

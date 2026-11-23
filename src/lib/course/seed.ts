@@ -1,13 +1,5 @@
-import login from "@/assets/prints/login.png.asset.json";
-import dashboard from "@/assets/prints/dashboard.png.asset.json";
-import menuCadastros from "@/assets/prints/menu-cadastros.png.asset.json";
-import produtosLista from "@/assets/prints/produtos-lista.png.asset.json";
-import produtoDados from "@/assets/prints/produto-dados.png.asset.json";
-import produtoTributacao from "@/assets/prints/produto-tributacao.png.asset.json";
-import servicosLista from "@/assets/prints/servicos-lista.png.asset.json";
-import servicoCadastro from "@/assets/prints/servico-cadastro.png.asset.json";
-import clientesLista from "@/assets/prints/clientes-lista.png.asset.json";
-import clienteCadastro from "@/assets/prints/cliente-cadastro.png.asset.json";
+const COURSE_IMAGE_BASE = "https://itbppoailqkuxajesgys.supabase.co/storage/v1/object/public/course-images/original";
+const originalImage = (filename: string) => `${COURSE_IMAGE_BASE}/${filename}`;
 
 import type { Course, Hotspot, Lesson, Module } from "./types";
 
@@ -26,7 +18,7 @@ const lessons: Lesson[] = [
     title: "Entrando no sistema",
     summary: "Como acessar o Emissor Future com seu CPF ou e-mail e recuperar a senha.",
     path: "Tela inicial",
-    image: login.url,
+    image: originalImage("login.png"),
     content:
       "Para entrar no Emissor Future você precisa do **CPF ou e-mail** cadastrado e da sua **senha**.\n\n1. Digite seu CPF (só números) ou e-mail.\n2. Digite sua senha.\n3. Clique em **Entrar**.\n\nEsqueceu a senha? Clique em **Esqueci minha senha** e siga as instruções que chegam no seu e-mail.",
     hotspots: [
@@ -42,7 +34,7 @@ const lessons: Lesson[] = [
     title: "Conhecendo o Painel (Dashboard)",
     summary: "A tela inicial: atalhos para emitir cada tipo de nota, gráfico de emissões e últimos documentos.",
     path: "Menu lateral > Dashboard",
-    image: dashboard.url,
+    image: originalImage("dashboard.png"),
     content:
       "O **Dashboard** é a primeira tela depois do login. Ele mostra um resumo da empresa selecionada:\n\n- **Cartões de documentos**: quantas notas de cada tipo já foram emitidas, com um botão para emitir uma nova.\n- **Emissões mensais**: gráfico com a quantidade de documentos por mês.\n- **Últimos documentos**: as notas mais recentes, com data, tipo, cliente e valor.\n\nPelo **menu lateral roxo** você acessa todas as áreas: Dashboard, Cadastros, Documentos, Relatórios e Configurações.",
     hotspots: [
@@ -71,7 +63,7 @@ const lessons: Lesson[] = [
     title: "O menu Cadastros",
     summary: "Onde ficam todos os cadastros que alimentam as suas notas.",
     path: "Menu lateral > Cadastros",
-    image: menuCadastros.url,
+    image: originalImage("menu-cadastros.png"),
     content:
       "Ao clicar em **Cadastros** no menu lateral, abre uma lista com todos os cadastros do sistema. Eles são a base das notas: quanto melhor preenchidos, mais rápida e sem erros fica a emissão.\n\n> Dica: cadastre primeiro os **Grupos Tributários** e a **Natureza de Operação**, depois Produtos e Clientes.",
     hotspots: [
@@ -91,7 +83,7 @@ const lessons: Lesson[] = [
     title: "Lista de Produtos",
     summary: "Pesquisar, filtrar, editar e criar produtos.",
     path: "Cadastros > Produtos",
-    image: produtosLista.url,
+    image: originalImage("produtos-lista.png"),
     content:
       "Aqui aparecem todos os produtos da empresa. Cada linha mostra **Código**, **Descrição**, **Preço**, **Unidade de medida** e a situação (**Ativo**).\n\nPara cadastrar um produto novo, clique em **Novo Produto** no canto superior direito.",
     hotspots: [
@@ -111,7 +103,7 @@ const lessons: Lesson[] = [
     title: "Cadastrar produto: Dados do Produto",
     summary: "Cada campo da primeira aba do cadastro de produto, explicado.",
     path: "Cadastros > Produtos > Novo Produto",
-    image: produtoDados.url,
+    image: originalImage("produto-dados.png"),
     content:
       "O cadastro de produto tem 3 abas: **Dados do Produto**, **Tributação** e **Outras informações**.\n\n**Passo a passo para cadastrar um produto:**\n1. Vá em **Cadastros > Produtos** e clique em **Novo Produto**.\n2. Preencha **Descrição**, **Un. Medida** e **Preço Unitário**.\n3. Informe o **NCM** (use a lupa para pesquisar).\n4. Se tiver, informe o **Código de Barras (EAN)** e o **CEST**.\n5. Vá na aba **Tributação** e escolha o **Grupo Tributário** e a **Origem**.\n6. Clique em **Salvar**.",
     hotspots: [
@@ -138,7 +130,7 @@ const lessons: Lesson[] = [
     title: "Cadastrar produto: Tributação",
     summary: "Como escolher o Grupo Tributário e a Origem do produto.",
     path: "Cadastros > Produtos > Novo Produto > aba Tributação",
-    image: produtoTributacao.url,
+    image: originalImage("produto-tributacao.png"),
     content:
       "Na aba **Tributação** você define como os impostos do produto serão calculados.\n\n- **Grupo Tributário**: escolha **Padrão da Empresa** para usar a regra configurada para a empresa, ou um grupo específico, como **Simples Nacional - CSOSN 102**.\n- **Origem**: de onde vem a mercadoria. Para produtos nacionais, use **0 - Nacional**.\n\nNão sabe qual escolher? Pergunte à sua contabilidade qual tributação vale para seus produtos.",
     hotspots: [
@@ -154,7 +146,7 @@ const lessons: Lesson[] = [
     title: "Lista de Serviços",
     summary: "Onde ficam os serviços usados na nota de serviço (NFS-e).",
     path: "Cadastros > Serviços",
-    image: servicosLista.url,
+    image: originalImage("servicos-lista.png"),
     content:
       "A lista de **Serviços** funciona igual à de produtos. Quando ainda não há nenhum serviço cadastrado, aparece **Nenhum registro**.\n\nClique em **Novo Serviço** para cadastrar o primeiro.",
     hotspots: [
@@ -170,7 +162,7 @@ const lessons: Lesson[] = [
     title: "Cadastrar serviço",
     summary: "Campos do cadastro de serviço e o que cada um significa.",
     path: "Cadastros > Serviços > Novo Serviço",
-    image: servicoCadastro.url,
+    image: originalImage("servico-cadastro.png"),
     content:
       "**Passo a passo para cadastrar um serviço:**\n1. Vá em **Cadastros > Serviços** e clique em **Novo Serviço**.\n2. Preencha **Descrição**, **Valor** e **Unidade**.\n3. Informe os códigos fiscais: **CNAE**, **Código Trib. Município**, **Item Lista de Serviço**, **Cód. Trib. Nacional** e **NBS**.\n4. Clique em **Salvar**.\n\nOs códigos fiscais dependem da sua prefeitura e da atividade da empresa. Sua contabilidade pode informar os corretos.",
     hotspots: [
@@ -192,7 +184,7 @@ const lessons: Lesson[] = [
     title: "Lista de Clientes",
     summary: "Pesquisar, editar e cadastrar clientes, fornecedores e transportadoras.",
     path: "Cadastros > Clientes",
-    image: clientesLista.url,
+    image: originalImage("clientes-lista.png"),
     content:
       "Aqui ficam todos os clientes com **Nome**, **CPF/CNPJ**, **Cidade** e situação.\n\nPara cadastrar, clique em **Novo Cliente**.",
     hotspots: [
@@ -212,7 +204,7 @@ const lessons: Lesson[] = [
     title: "Cadastrar cliente",
     summary: "Todos os campos do cadastro de cliente, explicados.",
     path: "Cadastros > Clientes > Novo Cliente",
-    image: clienteCadastro.url,
+    image: originalImage("cliente-cadastro.png"),
     content:
       "**Passo a passo para cadastrar um cliente:**\n1. Vá em **Cadastros > Clientes** e clique em **Novo Cliente**.\n2. Em **Tipo de Cadastro**, deixe **Cliente** ligado (e ligue Fornecedor/Transportadora se também for).\n3. Digite o **CPF/CNPJ** e o **Nome**.\n4. Defina **Consumidor Final** e **Contribuinte ICMS**.\n5. Preencha telefone e e-mail (o XML e o PDF da nota podem ser enviados para esse e-mail).\n6. Na aba **Endereço Principal**, digite o **CEP** e clique na lupa para preencher o endereço.\n7. Clique em **Salvar** no final da página.",
     hotspots: [
