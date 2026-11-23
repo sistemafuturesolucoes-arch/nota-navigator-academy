@@ -280,6 +280,11 @@ function LessonPage() {
                 />
               </div>
               {isFullscreen && (
+                <>
+                <div className="absolute bottom-[4.25rem] left-1/2 z-[10000] w-[min(90vw,720px)] -translate-x-1/2 rounded-xl border border-border/70 bg-card/90 px-4 py-2 text-center shadow-lg backdrop-blur-sm">
+                  <p className="truncate text-sm font-semibold text-foreground">{lesson.title}</p>
+                  <p className="truncate text-[11px] text-muted-foreground">{mod?.title ? `Módulo: ${mod.title}` : "Manual Interativo"}</p>
+                </div>
                 <div className="absolute bottom-3 left-1/2 z-[10000] flex -translate-x-1/2 items-center gap-2 rounded-full border border-border/70 bg-card/90 p-1.5 shadow-lg backdrop-blur-sm">
                   <Button
                     type="button"
@@ -330,6 +335,7 @@ function LessonPage() {
                     <ArrowRight className="size-4" />
                   </Button>
                 </div>
+                </>
               )}
             </div>
           </section>
