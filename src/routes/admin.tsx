@@ -57,6 +57,44 @@ const SUPABASE_URL = "https://itbppoailqkuxajesgys.supabase.co";
 const ADMIN_AUTH_URL = `${SUPABASE_URL}/functions/v1/admin-auth`;
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_J3-cgRigKn2QardNRaOFRQ_Jja51yof";
 const ADMIN_SESSION_KEY = "future-manual-admin-session-v1";
+const CHAT_STORAGE_KEY = "future-manual-chat-v1";
+
+function readAdminSession(): string | null {
+  try {
+    return localStorage.getItem(ADMIN_SESSION_KEY) || sessionStorage.getItem(ADMIN_SESSION_KEY);
+  } catch {
+    try { return sessionStorage.getItem(ADMIN_SESSION_KEY); } catch { return null; }
+  }
+}
+
+function persistAdminSession(session: AdminSession) {
+  const compact: AdminSession = {
+    access_token: session.access_token,
+    refresh_token: session.refresh_token,
+    expires_in: session.expires_in,
+    expires_at: session.expires_at,
+  };
+  const serialized = JSON.stringify(compact);
+  try {
+    localStorage.setItem(ADMIN_SESSION_KEY, serialized);
+    return;
+  } catch {
+    // O histórico do chat pode ocupar quase toda a cota do navegador.
+    try { localStorage.removeItem(CHAT_STORAGE_KEY); } catch { /* storage unavailable */ }
+  }
+  try {
+    localStorage.setItem(ADMIN_SESSION_KEY, serialized);
+    return;
+  } catch {
+    // Mantém a sessão ao menos durante esta aba, sem bloquear o login.
+  }
+  try { sessionStorage.setItem(ADMIN_SESSION_KEY, serialized); } catch { /* private mode/full storage */ }
+}
+
+function clearAdminSession() {
+  try { localStorage.removeItem(ADMIN_SESSION_KEY); } catch { /* storage unavailable */ }
+  try { sessionStorage.removeItem(ADMIN_SESSION_KEY); } catch { /* storage unavailable */ }
+}
 
 const COURSE_IMAGES_BUCKET = "course-images";
 
@@ -66,7 +104,7 @@ function encodeMetadata(value: string) {
 }
 
 async function getFreshAdminToken(fallback: string, forceRefresh = false): Promise<string> {
-  const raw = localStorage.getItem(ADMIN_SESSION_KEY);
+  const raw = readAdminSession();
   if (!raw) return fallback;
   let saved: AdminSession;
   try { saved = JSON.parse(raw) as AdminSession; } catch { return fallback; }
@@ -231,7 +269,7 @@ function AdminPage() {
 
   const storeSession = (next: AdminSession) => {
     setSession(next);
-    localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(next));
+    persistAdminSession(next);
   };
 
   useEffect(() => {
@@ -261,7 +299,7 @@ function AdminPage() {
         setMustChangePassword(sessionInfo.mustChangePassword === true);
         setStatus("signed-in");
       } catch {
-        localStorage.removeItem(ADMIN_SESSION_KEY);
+        clearAdminSession();
         if (active) {
           setSession(null);
           setStatus("signed-out");
