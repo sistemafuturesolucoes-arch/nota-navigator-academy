@@ -93,14 +93,14 @@ function LessonPage() {
   const hasPreviousScreenshot = activeScreenshotIndex > 0;
   const hasNextScreenshot = activeScreenshotIndex < screenshots.length - 1;
   const [autoNarrate, setAutoNarrate] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(() => typeof window !== "undefined" && window.sessionStorage.getItem("manual-fullscreen") === "1");
   const { speak, stop } = useSpeech();
   const screenRef = useRef<HTMLDivElement>(null);
 
+  // Mantém o modo imersivo entre aulas e módulos. A camada fixa persiste entre as rotas.
   useEffect(() => {
-    const syncFullscreen = () => setIsFullscreen(document.fullscreenElement === screenRef.current);
-    document.addEventListener("fullscreenchange", syncFullscreen);
-    return () => document.removeEventListener("fullscreenchange", syncFullscreen);
+    if (typeof window === "undefined") return;
+    if (window.sessionStorage.getItem("manual-fullscreen") === "1") setIsFullscreen(true);
   }, []);
 
   useEffect(() => {
@@ -139,6 +139,8 @@ function LessonPage() {
       if (e.key === "ArrowRight" && activeIndex < hotspots.length - 1) goTo(activeIndex + 1);
       if (e.key === "ArrowLeft" && activeIndex > 0) goTo(activeIndex - 1);
       if (e.key === "Escape") {
+        setIsFullscreen(false);
+        window.sessionStorage.removeItem("manual-fullscreen");
         setActiveId(null);
         if (mode === "tour") setMode("explore");
         setAutoNarrate(false);
@@ -270,7 +272,10 @@ function LessonPage() {
                 variant="ghost"
                 size="sm"
                 className="ml-auto"
-                onClick={() => screenRef.current?.requestFullscreen?.()}
+                onClick={() => {
+                  window.sessionStorage.setItem("manual-fullscreen", "1");
+                  setIsFullscreen(true);
+                }}
               >
                 <Maximize2 /> Tela cheia
               </Button>
@@ -304,7 +309,8 @@ function LessonPage() {
                       if (target) {
                         stop();
                         setAutoNarrate(false);
-                        window.location.assign(`/manual/aula/${encodeURIComponent(target)}`);
+                        window.sessionStorage.setItem("manual-fullscreen", "1");
+                        navigate({ to: "/aula/$lessonId", params: { lessonId: target }, search: {} });
                       }
                     }}
                   >
@@ -314,6 +320,19 @@ function LessonPage() {
                   <span className="max-w-[38vw] truncate px-1 text-xs font-semibold text-foreground">
                     Módulo {currentModuleIndex + 1} de {course.modules.length} · {mod?.title ?? "Curso"}
                   </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="rounded-full"
+                    onClick={() => {
+                      setIsFullscreen(false);
+                      window.sessionStorage.removeItem("manual-fullscreen");
+                    }}
+                    title="Sair da tela cheia (Esc)"
+                  >
+                    Sair
+                  </Button>
                   <Button
                     type="button"
                     variant="default"
@@ -326,7 +345,8 @@ function LessonPage() {
                       if (target) {
                         stop();
                         setAutoNarrate(false);
-                        window.location.assign(`/manual/aula/${encodeURIComponent(target)}`);
+                        window.sessionStorage.setItem("manual-fullscreen", "1");
+                        navigate({ to: "/aula/$lessonId", params: { lessonId: target }, search: {} });
                       }
                     }}
                   >
@@ -355,7 +375,8 @@ function LessonPage() {
                       if (hasPreviousScreenshot) {
                         setActiveScreenshotId(screenshots[activeScreenshotIndex - 1].id);
                       } else if (prev) {
-                        window.location.assign(`/manual/aula/${encodeURIComponent(prev.id)}`);
+                        window.sessionStorage.setItem("manual-fullscreen", "1");
+                        navigate({ to: "/aula/$lessonId", params: { lessonId: prev.id }, search: {} });
                       }
                     }}
                   >
@@ -381,7 +402,8 @@ function LessonPage() {
                         setActiveScreenshotId(screenshots[activeScreenshotIndex + 1].id);
                       } else if (next) {
                         toggleLessonDone(lesson.id, true);
-                        window.location.assign(`/manual/aula/${encodeURIComponent(next.id)}`);
+                        window.sessionStorage.setItem("manual-fullscreen", "1");
+                        navigate({ to: "/aula/$lessonId", params: { lessonId: next.id }, search: {} });
                       }
                     }}
                   >
