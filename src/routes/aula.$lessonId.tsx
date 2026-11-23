@@ -375,45 +375,39 @@ function LessonPage() {
                     variant="outline"
                     size="sm"
                     className="size-8 rounded-full p-0"
-                    disabled={!hasPreviousScreenshot && !prev}
-                    title={hasPreviousScreenshot ? "Print anterior" : prev ? `Aula anterior: ${prev.title}` : "Início do curso"}
-                    aria-label={hasPreviousScreenshot ? "Mostrar print anterior" : "Ir para a aula anterior"}
+                    disabled={!prev}
+                    title={prev ? `Aula anterior: ${prev.title}` : "Início do curso"}
+                    aria-label="Ir para a aula anterior"
                     onClick={() => {
+                      if (!prev) return;
                       stop();
                       setAutoNarrate(false);
                       setActiveId(null);
                       setMode("explore");
-                      if (hasPreviousScreenshot) {
-                        setActiveScreenshotId(screenshots[activeScreenshotIndex - 1].id);
-                      } else if (prev) {
-                        navigateToLesson(prev.id);
-                      }
+                      navigateToLesson(prev.id);
                     }}
                   >
                     <ArrowLeft className="size-4" />
                   </Button>
                   <span className="min-w-12 text-center text-[11px] font-medium tabular-nums text-muted-foreground">
-                    Aula {Math.max(0, moduleLessonIndex) + 1}/{moduleLessons.length} · Tela {activeScreenshotIndex + 1}/{screenshots.length}
+                    Aula {Math.max(0, moduleLessonIndex) + 1}/{moduleLessons.length}
                   </span>
                   <Button
                     type="button"
                     variant="default"
                     size="sm"
                     className="size-8 rounded-full p-0"
-                    disabled={!hasNextScreenshot && !next}
-                    title={hasNextScreenshot ? "Próximo print" : next ? `Próxima aula: ${next.title}` : "Fim do curso"}
-                    aria-label={hasNextScreenshot ? "Mostrar próximo print" : "Ir para a próxima aula"}
+                    disabled={!next}
+                    title={next ? `Próxima aula: ${next.title}` : "Fim do curso"}
+                    aria-label="Ir para a próxima aula"
                     onClick={() => {
+                      if (!next) return;
                       stop();
                       setAutoNarrate(false);
                       setActiveId(null);
                       setMode("explore");
-                      if (hasNextScreenshot) {
-                        setActiveScreenshotId(screenshots[activeScreenshotIndex + 1].id);
-                      } else if (next) {
-                        toggleLessonDone(lesson.id, true);
-                        navigateToLesson(next.id);
-                      }
+                      toggleLessonDone(lesson.id, true);
+                      navigateToLesson(next.id);
                     }}
                   >
                     <ArrowRight className="size-4" />
