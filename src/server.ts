@@ -26,7 +26,7 @@ async function prefixSsrAssetUrls(response: Response): Promise<Response> {
   if (!contentType.includes("text/html")) return response;
 
   const html = await response.text();
-  const rewritten = html.replace(/(["'=])\\/assets\\//g, '$1/manual/assets/');
+  const rewritten = html.replace(/(["'=])\/assets\//g, '$1/manual/assets/');
   if (rewritten === html) return new Response(html, response);
 
   const headers = new Headers(response.headers);
