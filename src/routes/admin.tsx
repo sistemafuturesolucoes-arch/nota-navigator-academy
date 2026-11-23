@@ -671,7 +671,7 @@ async function createErrorMediaSignedUrl(path: string, accessToken: string): Pro
   if (!response.ok) throw new Error((await response.text()) || "Não foi possível gerar o link seguro do arquivo.");
   const data = await response.json() as { signedURL?: string };
   if (!data.signedURL) throw new Error("O armazenamento não retornou o link seguro do arquivo.");
-  return data.signedURL.startsWith("http") ? data.signedURL : SUPABASE_URL + data.signedURL;
+  return data.signedURL.startsWith("http") ? data.signedURL : data.signedURL.startsWith("/storage/v1/") ? SUPABASE_URL + data.signedURL : SUPABASE_URL + "/storage/v1" + (data.signedURL.startsWith("/") ? data.signedURL : "/" + data.signedURL);
 }
 
 async function uploadErrorMedia(file: File, errorId: string, accessToken: string): Promise<ErrorMedia> {
