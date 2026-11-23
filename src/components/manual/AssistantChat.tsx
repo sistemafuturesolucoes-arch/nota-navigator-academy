@@ -122,7 +122,7 @@ function AssistantResponse({ text, course }: { text: string; course: ReturnType<
       parts.push({ type: "visual", lessonId: match[1], screenshotId: match[2], key: "visual-" + match.index });
     } else if (match[3] && match[4]) {
       const url = match[4];
-      if (url.startsWith("https://itbppoailqkuxajesgys.supabase.co/storage/v1/object/public/error-media/")) {
+      if (url.startsWith("https://itbppoailqkuxajesgys.supabase.co/storage/v1/object/sign/error-media/")) {
         parts.push({ type: "media", mediaType: match[3] === "IMAGE" ? "image" : "video", url, key: "media-" + match.index });
       }
     }
