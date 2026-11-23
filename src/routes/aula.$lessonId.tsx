@@ -21,7 +21,7 @@ import { VideoEmbed } from "@/components/manual/VideoEmbed";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useSpeech } from "@/hooks/use-speech";
-import { moduleOf, orderedLessons, toggleLessonDone, useCourse, useProgress } from "@/lib/course/store";
+import { loadCourseFromSupabase, moduleOf, orderedLessons, toggleLessonDone, useProgress } from "@/lib/course/store";
 import { cn } from "@/lib/utils";
 
 type LessonSearch = { ponto?: string | undefined };
@@ -40,6 +40,7 @@ export const Route = createFileRoute("/aula/$lessonId")({
       { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
+  loader: () => loadCourseFromSupabase(),
   component: LessonPage,
 });
 
@@ -53,7 +54,7 @@ function LessonPage() {
   const { lessonId } = Route.useParams();
   const { ponto } = Route.useSearch();
   const navigate = useNavigate();
-  const course = useCourse();
+  const course = Route.useLoaderData();
   const done = new Set(useProgress());
   const lesson = course.lessons[lessonId];
   const all = orderedLessons(course);
