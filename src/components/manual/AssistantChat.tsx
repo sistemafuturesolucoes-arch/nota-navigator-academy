@@ -58,14 +58,22 @@ export function loadSavedMessages(): UIMessage[] {
 }
 
 function saveMessages(messages: UIMessage[]) {
-  const slim = messages.map((m) => ({
-    ...m,
-    parts: m.parts.map((p) => (p.type === "file" ? { type: "text" as const, text: "📎 Print enviado" } : p)),
+  // Persistir somente texto necessário para restaurar a conversa. Não guardar
+  // metadados grandes de anexos nem um histórico ilimitado no armazenamento local.
+  const slim = messages.slice(-20).map((message) => ({
+    id: message.id,
+    role: message.role,
+    parts: message.parts.flatMap((part) => {
+      if (part.type === "file") return [{ type: "text" as const, text: "📎 Arquivo enviado" }];
+      if (part.type === "text") return [{ type: "text" as const, text: part.text.slice(0, 8000) }];
+      return [];
+    }),
   }));
   try {
-    window.localStorage.setItem(CHAT_KEY, JSON.stringify(slim.slice(-60)));
-  } catch (e) {
-    console.error(e);
+    window.localStorage.setItem(CHAT_KEY, JSON.stringify(slim));
+  } catch (error) {
+    console.warn("Não foi possível salvar o histórico do assistente neste navegador.", error);
+    try { window.localStorage.removeItem(CHAT_KEY); } catch { /* storage unavailable */ }
   }
 }
 
@@ -192,7 +200,7 @@ export function AssistantChat({ initialMessages, tela }: { initialMessages: UIMe
   const { messages, sendMessage, status, error, stop: stopChat, setMessages, clearError } = useChat({
     id: CHAT_ID,
     messages: initialMessages,
-    transport: new DefaultChatTransport({ api: "/api/chat" }),
+    transport: new DefaultChatTransport({ api: `${import.meta.env.BASE_URL}api/chat` }),
   });
 
   const busy = status === "submitted" || status === "streaming";
