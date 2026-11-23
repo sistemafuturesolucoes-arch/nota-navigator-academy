@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeft,
   ArrowRight,
@@ -52,6 +52,7 @@ const MODES: { id: ScreenMode; label: string; icon: typeof Eye; hint: string }[]
 
 function LessonPage() {
   const { lessonId } = Route.useParams();
+  const navigate = useNavigate();
   const { ponto } = Route.useSearch();
   const course = Route.useLoaderData();
   const done = new Set(useProgress());
@@ -356,8 +357,7 @@ function LessonPage() {
                       if (target) {
                         stop();
                         setAutoNarrate(false);
-                        window.sessionStorage.setItem("manual-fullscreen", "1");
-                        navigate({ to: "/aula/$lessonId", params: { lessonId: target }, search: {} });
+                        navigateToLesson(target);
                       }
                     }}
                   >
