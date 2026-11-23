@@ -164,7 +164,7 @@ function LessonPage() {
   return (
     <div className="mx-auto flex w-full max-w-[1500px] flex-1">
       <aside className="sticky top-16 hidden h-[calc(100vh-4rem)] w-72 shrink-0 overflow-y-auto border-r bg-card/60 p-4 lg:block">
-        <CourseNav activeLessonId={lesson.id} />
+        <CourseNav activeLessonId={lesson.id} course={course} />
       </aside>
 
       <main className="min-w-0 flex-1 px-4 py-6 lg:px-8">
