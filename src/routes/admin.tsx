@@ -349,7 +349,7 @@ function AdminPage() {
 
   const logout = () => {
     if (session?.access_token) void adminRequest("logout", {}, session.access_token).catch(() => undefined);
-    localStorage.removeItem(ADMIN_SESSION_KEY);
+    clearAdminSession();
     setSession(null);
     setStatus("signed-out");
     setMustChangePassword(false);
