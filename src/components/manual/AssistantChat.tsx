@@ -82,7 +82,7 @@ function readError(error: Error) {
 function textOf(m: UIMessage) {
   return m.parts
     .filter((p): p is { type: "text"; text: string } => p.type === "text")
-    .map((p) => p.text.replace(/\[VISUAL:[^\]]+\]/g, ""))
+    .map((p) => p.text.replace(/\[VISUAL:[^\]]+\]|\[ERROR_MEDIA_(?:IMAGE|VIDEO):[^\]]+\]/g, ""))
     .join("\n");
 }
 
