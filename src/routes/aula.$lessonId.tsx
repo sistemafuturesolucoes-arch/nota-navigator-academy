@@ -62,6 +62,15 @@ function LessonPage() {
   const prev = idx > 0 ? all[idx - 1] : undefined;
   const next = idx >= 0 && idx < all.length - 1 ? all[idx + 1] : undefined;
   const mod = moduleOf(course, lessonId);
+  const currentModuleIndex = course.modules.findIndex((module) => module.id === mod?.id);
+  const previousModule = currentModuleIndex > 0
+    ? [...course.modules.slice(0, currentModuleIndex)].reverse().find((module) => module.lessonIds.some((id) => course.lessons[id]))
+    : undefined;
+  const nextModule = currentModuleIndex >= 0
+    ? course.modules.slice(currentModuleIndex + 1).find((module) => module.lessonIds.some((id) => course.lessons[id]))
+    : undefined;
+  const firstLessonOf = (module: (typeof course.modules)[number] | undefined) =>
+    module?.lessonIds.find((id) => Boolean(course.lessons[id]));
 
   const [mode, setMode] = useState<ScreenMode>("explore");
   const [activeId, setActiveId] = useState<string | null>(ponto ?? null);
@@ -282,6 +291,49 @@ function LessonPage() {
               </div>
               {isFullscreen && (
                 <>
+                <div className="absolute left-1/2 top-3 z-[10001] flex max-w-[96vw] -translate-x-1/2 items-center gap-2 rounded-full border border-border/70 bg-card/95 p-1.5 shadow-lg backdrop-blur-sm">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="rounded-full"
+                    disabled={!previousModule}
+                    title={previousModule ? `Ir para o módulo: ${previousModule.title}` : "Primeiro módulo"}
+                    onClick={() => {
+                      const target = firstLessonOf(previousModule);
+                      if (target) {
+                        stop();
+                        setAutoNarrate(false);
+                        window.location.assign(`/manual/aula/${encodeURIComponent(target)}`);
+                      }
+                    }}
+                  >
+                    <ArrowLeft className="size-4" />
+                    <span className="hidden sm:inline">Módulo anterior</span>
+                  </Button>
+                  <span className="max-w-[38vw] truncate px-1 text-xs font-semibold text-foreground">
+                    Módulo {currentModuleIndex + 1} de {course.modules.length} · {mod?.title ?? "Curso"}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="default"
+                    size="sm"
+                    className="rounded-full"
+                    disabled={!nextModule}
+                    title={nextModule ? `Ir para o módulo: ${nextModule.title}` : "Último módulo"}
+                    onClick={() => {
+                      const target = firstLessonOf(nextModule);
+                      if (target) {
+                        stop();
+                        setAutoNarrate(false);
+                        window.location.assign(`/manual/aula/${encodeURIComponent(target)}`);
+                      }
+                    }}
+                  >
+                    <span className="hidden sm:inline">Próximo módulo</span>
+                    <ArrowRight className="size-4" />
+                  </Button>
+                </div>
                 <div className="absolute bottom-[4.25rem] left-1/2 z-[10000] w-[min(90vw,720px)] -translate-x-1/2 rounded-xl border border-border/70 bg-card/90 px-4 py-2 text-center shadow-lg backdrop-blur-sm">
                   <p className="truncate text-sm font-semibold text-foreground">{lesson.title}</p>
                   <p className="truncate text-[11px] text-muted-foreground">{mod?.title ? `Módulo: ${mod.title}` : "Manual Interativo"}</p>
