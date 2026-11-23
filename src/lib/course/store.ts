@@ -221,7 +221,9 @@ export async function loadCourseFromSupabase(_accessToken?: string): Promise<Cou
   ]);
   if (!modules?.length) return courseStore.read();
   const course = fromDatabase(modules, lessons ?? []);
-  courseStore.write(course);
+  // No SSR, retorne os dados ao loader sem tentar acessar localStorage.
+  // No navegador, atualize o store compartilhado para as demais rotas.
+  if (typeof window !== "undefined") courseStore.write(course);
   return course;
 }
 
