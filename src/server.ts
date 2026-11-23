@@ -18,6 +18,26 @@ async function getServerEntry(): Promise<ServerEntry> {
   return serverEntryPromise;
 }
 
+// The CRM serves this app below /manual. TanStack Start's SSR manifest currently emits
+// root-relative /assets/... URLs even though Vite's base is /manual/. Keep the fix scoped
+// to HTML responses from this app: never rewrite CRM assets or JavaScript/CSS file contents.
+async function prefixSsrAssetUrls(response: Response): Promise<Response> {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("text/html")) return response;
+
+  const html = await response.text();
+  const rewritten = html.replace(/(["'=])\\/assets\\//g, '$1/manual/assets/');
+  if (rewritten === html) return new Response(html, response);
+
+  const headers = new Headers(response.headers);
+  headers.delete("content-length");
+  return new Response(rewritten, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 // h3 swallows in-handler throws into a normal 500 Response with body
 // {"unhandled":true,"message":"HTTPError"} — try/catch alone never fires for those.
 async function normalizeCatastrophicSsrResponse(response: Response): Promise<Response> {
@@ -52,7 +72,8 @@ export default {
     try {
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
-      return await normalizeCatastrophicSsrResponse(response);
+      const normalized = await normalizeCatastrophicSsrResponse(response);
+      return await prefixSsrAssetUrls(normalized);
     } catch (error) {
       console.error(error);
       return new Response(renderErrorPage(), {
