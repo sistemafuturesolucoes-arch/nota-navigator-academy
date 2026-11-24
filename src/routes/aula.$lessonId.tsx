@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useSpeech } from "@/hooks/use-speech";
 import { loadCourseFromSupabase, moduleOf, orderedLessons, toggleLessonDone, useProgress } from "@/lib/course/store";
+import { resolveLessonId } from "@/lib/course/lesson-routing";
 import { cn } from "@/lib/utils";
 
 type LessonSearch = { ponto?: string | undefined };
@@ -51,11 +52,13 @@ const MODES: { id: ScreenMode; label: string; icon: typeof Eye; hint: string }[]
 ];
 
 function LessonPage() {
-  const { lessonId } = Route.useParams();
+  const { lessonId: requestedLessonId } = Route.useParams();
   const navigate = useNavigate();
   const { ponto } = Route.useSearch();
   const course = Route.useLoaderData();
   const done = new Set(useProgress());
+  // Aceita tanto o ID estável do banco quanto links antigos gerados pelo título da aula.
+  const lessonId = resolveLessonId(course, requestedLessonId) ?? requestedLessonId;
   const lesson = course.lessons[lessonId];
   const all = orderedLessons(course);
   const idx = all.findIndex((l) => l.id === lessonId);
